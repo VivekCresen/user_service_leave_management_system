@@ -19,6 +19,7 @@ import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 
 @Service
 @Transactional(readOnly = true)
@@ -27,15 +28,21 @@ public class UserManagementServiceImpl implements UserManagementService {
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
+    private final EmailService emailService;
+    private final MailProperties mailProperties;
 
     public UserManagementServiceImpl(
             UserRepository userRepository,
             RoleRepository roleRepository,
-            PasswordEncoder passwordEncoder
+            PasswordEncoder passwordEncoder,
+            EmailService emailService,
+            MailProperties mailProperties
     ) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
+        this.emailService = emailService;
+        this.mailProperties = mailProperties;
     }
 
     @Override
@@ -64,57 +71,85 @@ public class UserManagementServiceImpl implements UserManagementService {
     @Transactional
     public ManagedUserResponse createUser(CreateUserRequest request) {
         UserAccount actor = loadActiveActor(request.actorUsername());
-        ensureCanCreateRole(actor, request.role());
+        String companyId = requireTrimmedValue(request.companyId(), "Company id is required");
+        String fullName = requireTrimmedValue(request.fullName(), "Full name is required");
+        String username = requireTrimmedValue(request.username(), "Username is required");
+        String email = requireTrimmedValue(request.email(), "Email is required").toLowerCase(Locale.ROOT);
+        String password = requireTrimmedValue(request.password(), "Password is required");
+        String roleName = requireTrimmedValue(request.role(), "Role is required").toUpperCase(Locale.ROOT);
+        String gender = requireTrimmedValue(request.gender(), "Gender is required");
 
-        validateUniqueUsername(null, request.username());
-        validateUniqueEmail(null, request.email());
+        ensureCanCreateRole(actor, roleName);
+
+        validateUniqueUsername(null, username);
+        validateUniqueEmail(null, email);
+        validateOptionalPassword(password);
 
         Instant now = Instant.now();
-        Role role = loadRole(request.role());
+        Role role = loadRole(roleName);
 
         UserAccount user = new UserAccount(
-                request.fullName(),
-                request.email(),
-                request.username(),
-                passwordEncoder.encode(request.password()),
+                fullName,
+                email,
+                username,
+                passwordEncoder.encode(password),
                 role
         );
-        user.setCompanyId(request.companyId());
+        user.setCompanyId(companyId);
         user.setActive(Boolean.TRUE.equals(request.active()));
-        user.setGender(request.gender());
+        user.setGender(gender);
         user.setCreateDate(now);
         user.setUpdateDate(now);
         user.setCreatedBy(actor.getUsername());
         user.setUpdatedBy(actor.getUsername());
 
-        return toManagedUserResponse(userRepository.save(user), actor, true);
+        UserAccount savedUser = userRepository.save(user);
+        emailService.sendNewUserCreatedEmail(
+                savedUser.getEmail(),
+                savedUser.getFullName(),
+                savedUser.getId(),
+                savedUser.getCompanyId(),
+                savedUser.getUsername(),
+                password,
+                savedUser.getRole(),
+                mailProperties.forgotPasswordUrl()
+        );
+
+        return toManagedUserResponse(savedUser, actor, true);
     }
 
     @Override
     @Transactional
     public ManagedUserResponse updateUser(Long userId, UpdateUserRequest request) {
         UserAccount actor = loadActiveActor(request.actorUsername());
+        String companyId = requireTrimmedValue(request.companyId(), "Company id is required");
+        String fullName = requireTrimmedValue(request.fullName(), "Full name is required");
+        String username = requireTrimmedValue(request.username(), "Username is required");
+        String email = requireTrimmedValue(request.email(), "Email is required").toLowerCase(Locale.ROOT);
+        String roleName = requireTrimmedValue(request.role(), "Role is required").toUpperCase(Locale.ROOT);
+        String gender = requireTrimmedValue(request.gender(), "Gender is required");
+        String password = normalizeOptionalValue(request.password());
         UserAccount target = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
 
         ensureManageableTarget(actor, target);
-        ensureCanAssignRole(actor, target, request.role());
-        validateOptionalPassword(request.password());
-        validateUniqueUsername(target.getId(), request.username());
-        validateUniqueEmail(target.getId(), request.email());
+        ensureCanAssignRole(actor, target, roleName);
+        validateOptionalPassword(password);
+        validateUniqueUsername(target.getId(), username);
+        validateUniqueEmail(target.getId(), email);
 
-        target.setCompanyId(request.companyId());
-        target.setFullName(request.fullName());
-        target.setUsername(request.username());
-        target.setEmail(request.email());
-        target.setGender(request.gender());
+        target.setCompanyId(companyId);
+        target.setFullName(fullName);
+        target.setUsername(username);
+        target.setEmail(email);
+        target.setGender(gender);
         target.setActive(Boolean.TRUE.equals(request.active()));
-        target.assignRole(loadRole(request.role()));
+        target.assignRole(loadRole(roleName));
         target.setUpdateDate(Instant.now());
         target.setUpdatedBy(actor.getUsername());
 
-        if (request.password() != null && !request.password().isBlank()) {
-            target.setPassword(passwordEncoder.encode(request.password()));
+        if (password != null && !password.isBlank()) {
+            target.setPassword(passwordEncoder.encode(password));
         }
 
         return toManagedUserResponse(userRepository.save(target), actor, true);
@@ -153,7 +188,7 @@ public class UserManagementServiceImpl implements UserManagementService {
         }
         if (isRole(actor, "MANAGER")) {
             return allUsers.stream()
-                    .filter(user -> isRole(user, "EMPLOYEE"))
+                    .filter(user -> isManagedEmployee(actor, user))
                     .toList();
         }
         return List.of(actor);
@@ -161,7 +196,7 @@ public class UserManagementServiceImpl implements UserManagementService {
 
     private List<String> assignableRolesFor(UserAccount actor) {
         if (isRole(actor, "ADMIN")) {
-            return List.of("ADMIN", "MANAGER", "EMPLOYEE");
+            return List.of("MANAGER", "EMPLOYEE");
         }
         if (isRole(actor, "MANAGER")) {
             return List.of("EMPLOYEE");
@@ -173,9 +208,24 @@ public class UserManagementServiceImpl implements UserManagementService {
         return isRole(actor, "ADMIN") || isRole(actor, "MANAGER");
     }
 
+    private String requireTrimmedValue(String value, String message) {
+        String normalized = normalizeOptionalValue(value);
+        if (normalized == null || normalized.isBlank()) {
+            throw new IllegalArgumentException(message);
+        }
+        return normalized;
+    }
+
+    private String normalizeOptionalValue(String value) {
+        return value == null ? null : value.trim();
+    }
+
     private void ensureCanCreateRole(UserAccount actor, String requestedRole) {
         if (!canManageUsers(actor)) {
             throw new AccessDeniedException("You do not have permission to create users.");
+        }
+        if (isRole(actor, "ADMIN") && !isSupportedAdminRole(requestedRole)) {
+            throw new AccessDeniedException("Admins can create managers and employees only.");
         }
         if (isRole(actor, "MANAGER") && !"EMPLOYEE".equalsIgnoreCase(requestedRole)) {
             throw new AccessDeniedException("Managers can create employees only.");
@@ -183,20 +233,24 @@ public class UserManagementServiceImpl implements UserManagementService {
     }
 
     private void ensureCanAssignRole(UserAccount actor, UserAccount target, String requestedRole) {
-        if (isRole(actor, "ADMIN")) {
+        if (isRole(actor, "ADMIN")
+                && !isRole(target, "ADMIN")
+                && isSupportedAdminRole(requestedRole)) {
             return;
         }
-        if (isRole(actor, "MANAGER") && isRole(target, "EMPLOYEE") && "EMPLOYEE".equalsIgnoreCase(requestedRole)) {
+        if (isRole(actor, "MANAGER")
+                && isManagedEmployee(actor, target)
+                && "EMPLOYEE".equalsIgnoreCase(requestedRole)) {
             return;
         }
         throw new AccessDeniedException("You do not have permission to change this user.");
     }
 
     private void ensureManageableTarget(UserAccount actor, UserAccount target) {
-        if (isRole(actor, "ADMIN")) {
+        if (isRole(actor, "ADMIN") && !isRole(target, "ADMIN")) {
             return;
         }
-        if (isRole(actor, "MANAGER") && isRole(target, "EMPLOYEE")) {
+        if (isRole(actor, "MANAGER") && isManagedEmployee(actor, target)) {
             return;
         }
         throw new AccessDeniedException("You do not have permission to manage this user.");
@@ -260,13 +314,33 @@ public class UserManagementServiceImpl implements UserManagementService {
 
     private boolean canEdit(UserAccount actor, UserAccount user) {
         if (isRole(actor, "ADMIN")) {
-            return true;
+            return !isRole(user, "ADMIN");
         }
-        return isRole(actor, "MANAGER") && isRole(user, "EMPLOYEE");
+        if (isRole(actor, "MANAGER")) {
+            return isManagedEmployee(actor, user);
+        }
+        return false;
+    }
+
+    private boolean isSupportedAdminRole(String roleName) {
+        return "MANAGER".equalsIgnoreCase(roleName) || "EMPLOYEE".equalsIgnoreCase(roleName);
+    }
+
+    private boolean isManagedEmployee(UserAccount actor, UserAccount user) {
+        if (!isRole(user, "EMPLOYEE")) {
+            return false;
+        }
+
+        String createdBy = user.getCreatedBy();
+        if (createdBy == null || createdBy.isBlank()) {
+            return false;
+        }
+
+        return createdBy.trim().equalsIgnoreCase(actor.getUsername());
     }
 
     private boolean canDelete(UserAccount actor, UserAccount user) {
-        return canEdit(actor, user) && !actor.getId().equals(user.getId());
+        return canEdit(actor, user) && !Objects.equals(actor.getId(), user.getId());
     }
 
     private boolean isRole(UserAccount user, String roleName) {
