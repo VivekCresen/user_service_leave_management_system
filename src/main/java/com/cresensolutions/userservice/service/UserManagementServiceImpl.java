@@ -10,60 +10,85 @@ import com.cresensolutions.userservice.model.UserAccount;
 import com.cresensolutions.userservice.repository.RoleRepository;
 import com.cresensolutions.userservice.repository.UserRepository;
 import com.cresensolutions.userservice.validation.ValidationPatterns;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 @Transactional(readOnly = true)
 public class UserManagementServiceImpl implements UserManagementService {
+    private static final String COMPANY_ID_PREFIX = "CRESEN";
+    private static final int COMPANY_ID_NUMBER_WIDTH = 3;
+    private static final int MINIMUM_NEXT_COMPANY_ID = 4;
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
     private final MailProperties mailProperties;
+    private final Executor dashboardTaskExecutor;
 
     public UserManagementServiceImpl(
             UserRepository userRepository,
             RoleRepository roleRepository,
             PasswordEncoder passwordEncoder,
             EmailService emailService,
-            MailProperties mailProperties
+            MailProperties mailProperties,
+            @Qualifier("dashboardTaskExecutor") Executor dashboardTaskExecutor
     ) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailService = emailService;
         this.mailProperties = mailProperties;
+        this.dashboardTaskExecutor = dashboardTaskExecutor;
     }
 
     @Override
     public UserDashboardResponse getDashboard(String actorUsername) {
         UserAccount actor = loadActiveActor(actorUsername);
-        List<UserAccount> visibleUsers = visibleUsersFor(actor);
-
-        return new UserDashboardResponse(
-                toManagedUserResponse(actor, actor, false),
-                visibleUsers.stream()
-                        .map(user -> toManagedUserResponse(user, actor, true))
+        ManagedUserResponse actorResponse = toManagedUserResponse(actor, actor, false);
+        List<UserAccountView> visibleUsers = loadVisibleUsers(actor);
+        CompletableFuture<List<ManagedUserResponse>> usersFuture = CompletableFuture.supplyAsync(
+                () -> visibleUsers.stream()
+                        .map(user -> toManagedUserResponse(user, actor))
                         .sorted(Comparator.comparing(ManagedUserResponse::username, String.CASE_INSENSITIVE_ORDER))
                         .toList(),
+                dashboardTaskExecutor
+        );
+        CompletableFuture<UserDashboardMetrics> metricsFuture = CompletableFuture.supplyAsync(
+                () -> summarizeUsers(visibleUsers),
+                dashboardTaskExecutor
+        );
+        UserDashboardMetrics metrics = metricsFuture.join();
+
+        return new UserDashboardResponse(
+                actorResponse,
+                usersFuture.join(),
                 assignableRolesFor(actor),
                 canManageUsers(actor),
-                visibleUsers.size(),
-                visibleUsers.stream().filter(UserAccount::isActive).count(),
-                visibleUsers.stream().filter(user -> !user.isActive()).count(),
-                visibleUsers.stream().filter(user -> isRole(user, "ADMIN")).count(),
-                visibleUsers.stream().filter(user -> isRole(user, "MANAGER")).count(),
-                visibleUsers.stream().filter(user -> isRole(user, "EMPLOYEE")).count()
+                metrics.totalUsers(),
+                metrics.activeUsers(),
+                metrics.inactiveUsers(),
+                metrics.adminCount(),
+                metrics.managerCount(),
+                metrics.employeeCount()
         );
     }
 
@@ -71,7 +96,6 @@ public class UserManagementServiceImpl implements UserManagementService {
     @Transactional
     public ManagedUserResponse createUser(CreateUserRequest request) {
         UserAccount actor = loadActiveActor(request.actorUsername());
-        String companyId = requireTrimmedValue(request.companyId(), "Company id is required");
         String fullName = requireTrimmedValue(request.fullName(), "Full name is required");
         String username = requireTrimmedValue(request.username(), "Username is required");
         String email = requireTrimmedValue(request.email(), "Email is required").toLowerCase(Locale.ROOT);
@@ -87,6 +111,7 @@ public class UserManagementServiceImpl implements UserManagementService {
 
         Instant now = Instant.now();
         Role role = loadRole(roleName);
+        String companyId = generateNextCompanyId();
 
         UserAccount user = new UserAccount(
                 fullName,
@@ -104,7 +129,7 @@ public class UserManagementServiceImpl implements UserManagementService {
         user.setUpdatedBy(actor.getUsername());
 
         UserAccount savedUser = userRepository.save(user);
-        emailService.sendNewUserCreatedEmail(
+        runAfterCommit(() -> emailService.sendNewUserCreatedEmail(
                 savedUser.getEmail(),
                 savedUser.getFullName(),
                 savedUser.getId(),
@@ -113,7 +138,7 @@ public class UserManagementServiceImpl implements UserManagementService {
                 password,
                 savedUser.getRole(),
                 mailProperties.forgotPasswordUrl()
-        );
+        ));
 
         return toManagedUserResponse(savedUser, actor, true);
     }
@@ -122,14 +147,13 @@ public class UserManagementServiceImpl implements UserManagementService {
     @Transactional
     public ManagedUserResponse updateUser(Long userId, UpdateUserRequest request) {
         UserAccount actor = loadActiveActor(request.actorUsername());
-        String companyId = requireTrimmedValue(request.companyId(), "Company id is required");
         String fullName = requireTrimmedValue(request.fullName(), "Full name is required");
         String username = requireTrimmedValue(request.username(), "Username is required");
         String email = requireTrimmedValue(request.email(), "Email is required").toLowerCase(Locale.ROOT);
         String roleName = requireTrimmedValue(request.role(), "Role is required").toUpperCase(Locale.ROOT);
         String gender = requireTrimmedValue(request.gender(), "Gender is required");
         String password = normalizeOptionalValue(request.password());
-        UserAccount target = userRepository.findById(userId)
+        UserAccount target = userRepository.findDetailedById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
 
         ensureManageableTarget(actor, target);
@@ -138,7 +162,6 @@ public class UserManagementServiceImpl implements UserManagementService {
         validateUniqueUsername(target.getId(), username);
         validateUniqueEmail(target.getId(), email);
 
-        target.setCompanyId(companyId);
         target.setFullName(fullName);
         target.setUsername(username);
         target.setEmail(email);
@@ -159,11 +182,11 @@ public class UserManagementServiceImpl implements UserManagementService {
     @Transactional
     public void deleteUser(Long userId, String actorUsername) {
         UserAccount actor = loadActiveActor(actorUsername);
-        UserAccount target = userRepository.findById(userId)
+        UserAccount target = userRepository.findDetailedById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
 
         ensureManageableTarget(actor, target);
-        if (actor.getId().equals(target.getId())) {
+        if (isSameUser(actor, target)) {
             throw new IllegalArgumentException("You cannot delete your own account.");
         }
 
@@ -181,17 +204,12 @@ public class UserManagementServiceImpl implements UserManagementService {
         return actor;
     }
 
-    private List<UserAccount> visibleUsersFor(UserAccount actor) {
-        List<UserAccount> allUsers = userRepository.findAllByOrderByUserNameAsc();
-        if (isRole(actor, "ADMIN")) {
-            return allUsers;
-        }
-        if (isRole(actor, "MANAGER")) {
-            return allUsers.stream()
-                    .filter(user -> isManagedEmployee(actor, user))
+    private List<UserAccountView> loadVisibleUsers(UserAccount actor) {
+        try (Stream<UserAccount> users = userRepository.streamAllByOrderByUserNameAsc()) {
+            return users.filter(user -> canViewUser(actor, user))
+                    .map(this::toUserAccountView)
                     .toList();
         }
-        return List.of(actor);
     }
 
     private List<String> assignableRolesFor(UserAccount actor) {
@@ -206,6 +224,25 @@ public class UserManagementServiceImpl implements UserManagementService {
 
     private boolean canManageUsers(UserAccount actor) {
         return isRole(actor, "ADMIN") || isRole(actor, "MANAGER");
+    }
+
+    private UserDashboardMetrics summarizeUsers(List<UserAccountView> users) {
+        long activeUsers = users.stream()
+                .filter(UserAccountView::active)
+                .count();
+        Map<String, Long> roleCounts = users.stream()
+                .map(UserAccountView::role)
+                .map(this::normalizeRoleName)
+                .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
+
+        return new UserDashboardMetrics(
+                users.size(),
+                activeUsers,
+                users.size() - activeUsers,
+                roleCounts.getOrDefault("ADMIN", 0L),
+                roleCounts.getOrDefault("MANAGER", 0L),
+                roleCounts.getOrDefault("EMPLOYEE", 0L)
+        );
     }
 
     private String requireTrimmedValue(String value, String message) {
@@ -264,6 +301,54 @@ public class UserManagementServiceImpl implements UserManagementService {
                 });
     }
 
+    private String generateNextCompanyId() {
+        List<String> existingCompanyIds = userRepository.findAllCompanyIds().stream()
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .toList();
+
+        int nextNumber = Math.max(
+                MINIMUM_NEXT_COMPANY_ID,
+                Math.max((int) userRepository.count() + 1, highestExistingCompanyId(existingCompanyIds) + 1)
+        );
+
+        String candidate = formatCompanyId(nextNumber);
+        while (containsCompanyId(existingCompanyIds, candidate)) {
+            nextNumber++;
+            candidate = formatCompanyId(nextNumber);
+        }
+
+        return candidate;
+    }
+
+    private int highestExistingCompanyId(List<String> companyIds) {
+        return companyIds.stream()
+                .mapToInt(this::extractCompanyIdNumber)
+                .max()
+                .orElse(MINIMUM_NEXT_COMPANY_ID - 1);
+    }
+
+    private int extractCompanyIdNumber(String companyId) {
+        if (!companyId.regionMatches(true, 0, COMPANY_ID_PREFIX, 0, COMPANY_ID_PREFIX.length())) {
+            return -1;
+        }
+
+        String suffix = companyId.substring(COMPANY_ID_PREFIX.length()).trim();
+        if (suffix.isEmpty() || !suffix.chars().allMatch(Character::isDigit)) {
+            return -1;
+        }
+
+        return Integer.parseInt(suffix);
+    }
+
+    private boolean containsCompanyId(List<String> companyIds, String candidate) {
+        return companyIds.stream().anyMatch(existing -> existing.equalsIgnoreCase(candidate));
+    }
+
+    private String formatCompanyId(int number) {
+        return COMPANY_ID_PREFIX + String.format(Locale.ROOT, "%0" + COMPANY_ID_NUMBER_WIDTH + "d", number);
+    }
+
     private void validateUniqueEmail(Long currentUserId, String email) {
         userRepository.findByEmailIdIgnoreCase(email)
                 .filter(existing -> !existing.getId().equals(currentUserId))
@@ -312,9 +397,57 @@ public class UserManagementServiceImpl implements UserManagementService {
         );
     }
 
+    private ManagedUserResponse toManagedUserResponse(UserAccountView user, UserAccount actor) {
+        return new ManagedUserResponse(
+                user.id(),
+                user.companyId(),
+                user.username(),
+                user.fullName(),
+                user.email(),
+                user.role(),
+                user.active(),
+                user.gender(),
+                user.createdBy(),
+                user.updatedBy(),
+                user.createDate(),
+                user.updateDate(),
+                user.lastLogin(),
+                canEdit(actor, user),
+                canDelete(actor, user)
+        );
+    }
+
+    private UserAccountView toUserAccountView(UserAccount user) {
+        return new UserAccountView(
+                user.getId(),
+                user.getCompanyId(),
+                user.getUsername(),
+                user.getFullName(),
+                user.getEmail(),
+                user.getRole(),
+                user.isActive(),
+                user.getGender(),
+                user.getCreatedBy(),
+                user.getUpdatedBy(),
+                user.getCreateDate(),
+                user.getUpdateDate(),
+                user.getLastLogin()
+        );
+    }
+
     private boolean canEdit(UserAccount actor, UserAccount user) {
         if (isRole(actor, "ADMIN")) {
             return !isRole(user, "ADMIN");
+        }
+        if (isRole(actor, "MANAGER")) {
+            return isManagedEmployee(actor, user);
+        }
+        return false;
+    }
+
+    private boolean canEdit(UserAccount actor, UserAccountView user) {
+        if (isRole(actor, "ADMIN")) {
+            return !isRole(user.role(), "ADMIN");
         }
         if (isRole(actor, "MANAGER")) {
             return isManagedEmployee(actor, user);
@@ -339,12 +472,105 @@ public class UserManagementServiceImpl implements UserManagementService {
         return createdBy.trim().equalsIgnoreCase(actor.getUsername());
     }
 
+    private boolean isManagedEmployee(UserAccount actor, UserAccountView user) {
+        if (!isRole(user.role(), "EMPLOYEE")) {
+            return false;
+        }
+
+        String createdBy = user.createdBy();
+        if (createdBy == null || createdBy.isBlank()) {
+            return false;
+        }
+
+        return createdBy.trim().equalsIgnoreCase(actor.getUsername());
+    }
+
     private boolean canDelete(UserAccount actor, UserAccount user) {
         return canEdit(actor, user) && !Objects.equals(actor.getId(), user.getId());
     }
 
+    private boolean canDelete(UserAccount actor, UserAccountView user) {
+        return canEdit(actor, user) && !isSameUser(actor, user);
+    }
+
     private boolean isRole(UserAccount user, String roleName) {
-        return user.getRole() != null
-                && user.getRole().trim().toUpperCase(Locale.ROOT).equals(roleName);
+        return isRole(user.getRole(), roleName);
+    }
+
+    private boolean isRole(String currentRole, String roleName) {
+        return normalizeRoleName(currentRole).equals(roleName);
+    }
+
+    private String normalizeRoleName(String roleName) {
+        return roleName == null ? "" : roleName.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private boolean canViewUser(UserAccount actor, UserAccount user) {
+        if (isRole(actor, "ADMIN")) {
+            return true;
+        }
+        if (isRole(actor, "MANAGER")) {
+            return isManagedEmployee(actor, user);
+        }
+        return isSameUser(actor, user);
+    }
+
+    private boolean isSameUser(UserAccount actor, UserAccount user) {
+        if (actor.getId() != null && user.getId() != null) {
+            return actor.getId().equals(user.getId());
+        }
+        return actor.getUsername() != null
+                && user.getUsername() != null
+                && actor.getUsername().equalsIgnoreCase(user.getUsername());
+    }
+
+    private boolean isSameUser(UserAccount actor, UserAccountView user) {
+        if (actor.getId() != null && user.id() != null) {
+            return actor.getId().equals(user.id());
+        }
+        return actor.getUsername() != null
+                && user.username() != null
+                && actor.getUsername().equalsIgnoreCase(user.username());
+    }
+
+    private void runAfterCommit(Runnable action) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            action.run();
+            return;
+        }
+
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                action.run();
+            }
+        });
+    }
+
+    private record UserDashboardMetrics(
+            long totalUsers,
+            long activeUsers,
+            long inactiveUsers,
+            long adminCount,
+            long managerCount,
+            long employeeCount
+    ) {
+    }
+
+    private record UserAccountView(
+            Long id,
+            String companyId,
+            String username,
+            String fullName,
+            String email,
+            String role,
+            boolean active,
+            String gender,
+            String createdBy,
+            String updatedBy,
+            Instant createDate,
+            Instant updateDate,
+            Instant lastLogin
+    ) {
     }
 }

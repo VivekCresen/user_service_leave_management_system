@@ -12,8 +12,6 @@ public record UpdateUserRequest(
         @Size(max = 100, message = "Actor username must not exceed 100 characters")
         String actorUsername,
 
-        @NotBlank(message = "Company id is required")
-        @Size(max = 100, message = "Company id must not exceed 100 characters")
         String companyId,
 
         @NotBlank(message = "Full name is required")

@@ -19,4 +19,17 @@ public class AsyncConfig {
         executor.initialize();
         return executor;
     }
+
+    @Bean(name = "dashboardTaskExecutor")
+    public Executor dashboardTaskExecutor() {
+        int processors = Runtime.getRuntime().availableProcessors();
+
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(Math.max(2, processors));
+        executor.setMaxPoolSize(Math.max(4, processors * 2));
+        executor.setQueueCapacity(200);
+        executor.setThreadNamePrefix("user-dashboard-");
+        executor.initialize();
+        return executor;
+    }
 }

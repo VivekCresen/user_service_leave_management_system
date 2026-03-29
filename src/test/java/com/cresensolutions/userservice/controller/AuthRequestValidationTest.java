@@ -1,7 +1,9 @@
 package com.cresensolutions.userservice.controller;
 
+import com.cresensolutions.userservice.dto.CreateUserRequest;
 import com.cresensolutions.userservice.dto.LoginRequest;
 import com.cresensolutions.userservice.dto.ResetPasswordWithOtpRequest;
+import com.cresensolutions.userservice.dto.UpdateUserRequest;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -51,6 +53,40 @@ class AuthRequestValidationTest {
                 "newPassword",
                 "Password must include uppercase, lowercase, number, and special character with no spaces"
         ));
+    }
+
+    @Test
+    void shouldAllowCreateUserPayloadWithoutCompanyId() {
+        Set<ConstraintViolation<CreateUserRequest>> violations = validator.validate(new CreateUserRequest(
+                "admin",
+                null,
+                "New Employee",
+                "new.employee",
+                "new.employee@cresen.com",
+                "TempPass@123",
+                "EMPLOYEE",
+                true,
+                "Female"
+        ));
+
+        assertTrue(violations.isEmpty());
+    }
+
+    @Test
+    void shouldAllowUpdateUserPayloadWithoutCompanyId() {
+        Set<ConstraintViolation<UpdateUserRequest>> violations = validator.validate(new UpdateUserRequest(
+                "admin",
+                null,
+                "Updated Employee",
+                "updated.employee",
+                "updated.employee@cresen.com",
+                "",
+                "EMPLOYEE",
+                true,
+                "Female"
+        ));
+
+        assertTrue(violations.isEmpty());
     }
 
     private static boolean containsViolation(
