@@ -2,12 +2,17 @@ package com.cresensolutions.userservice.model;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 
 import java.time.Instant;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 @Entity
 @Table(name = "role")
@@ -37,6 +42,9 @@ public class Role {
 
     @Column(name = "updated_by")
     private String updatedBy;
+
+    @OneToMany(mappedBy = "roleReference", fetch = FetchType.LAZY)
+    private Set<UserAccount> users = new LinkedHashSet<>();
 
     protected Role() {
     }
@@ -86,6 +94,10 @@ public class Role {
         return roleName == null ? "" : roleName;
     }
 
+    public Set<UserAccount> getUsers() {
+        return Collections.unmodifiableSet(users);
+    }
+
     public boolean matchesUserRole(String userRole) {
         if (userRole == null || userRole.isBlank()) {
             return false;
@@ -93,5 +105,13 @@ public class Role {
 
         return userRole.equalsIgnoreCase(roleName)
                 || userRole.equalsIgnoreCase(uniqueName);
+    }
+
+    void addUser(UserAccount user) {
+        users.add(user);
+    }
+
+    void removeUser(UserAccount user) {
+        users.remove(user);
     }
 }

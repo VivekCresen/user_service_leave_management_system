@@ -181,8 +181,13 @@ public class UserAccount {
     }
 
     public void assignRole(Role roleReference) {
+        if (this.roleReference != null && this.roleReference != roleReference) {
+            this.roleReference.removeUser(this);
+        }
+
         this.roleReference = roleReference;
         if (roleReference != null) {
+            roleReference.addUser(this);
             this.role = roleReference.getSummaryName();
         }
     }

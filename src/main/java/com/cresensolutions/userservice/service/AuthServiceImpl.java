@@ -16,13 +16,19 @@ import com.cresensolutions.userservice.repository.UserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
-import java.util.Comparator;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.NavigableSet;
 import java.util.Objects;
-import java.util.Set;
 import java.util.TreeSet;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 @Transactional(readOnly = true)
@@ -68,8 +74,8 @@ public class AuthServiceImpl implements AuthService {
         }
 
         user.setLastLogin(Instant.now());
-        UserAccount savedUser = userRepository.saveAndFlush(user);
-        authenticationAuditService.logLoginSuccess(user.getUsername());
+        UserAccount savedUser = userRepository.save(user);
+        runAfterCommit(() -> authenticationAuditService.logLoginSuccess(user.getUsername()));
         return toLoginResponse(savedUser, "Login successful");
     }
 
@@ -83,7 +89,7 @@ public class AuthServiceImpl implements AuthService {
         ensureActiveUser(user);
 
         String otp = otpService.createOtp(user);
-        emailService.sendPasswordResetOtp(user.getEmail(), user.getFullName(), otp);
+        runAfterCommit(() -> emailService.sendPasswordResetOtp(user.getEmail(), user.getFullName(), otp));
         return new OtpResponse("OTP sent to your email address.");
     }
 
@@ -109,18 +115,34 @@ public class AuthServiceImpl implements AuthService {
 
         otpService.validateOtp(user, request.otp());
         user.setPassword(passwordEncoder.encode(request.newPassword()));
-        UserAccount savedUser = userRepository.saveAndFlush(user);
+        UserAccount savedUser = userRepository.save(user);
         otpService.clearOtp(user);
-        authenticationAuditService.logPasswordReset(email);
+        runAfterCommit(() -> authenticationAuditService.logPasswordReset(email));
         return toLoginResponse(savedUser, "Password reset successful");
     }
 
     @Override
     public List<RoleSummaryResponse> fetchRoleSummary() {
-        List<UserAccount> users = userRepository.findAllByOrderByUserNameAsc();
+        List<Role> roles = roleRepository.findAllByOrderByIdAsc();
+        Map<String, String> canonicalRoleByAlias = buildCanonicalRoleMap(roles);
+        Map<String, NavigableSet<String>> usernamesByRole;
 
-        return roleRepository.findAllByOrderByIdAsc().stream()
-                .map(role -> toRoleSummary(role, users))
+        try (Stream<UserAccount> users = userRepository.streamAllByOrderByUserNameAsc()) {
+            usernamesByRole = users
+                    .map(user -> toRoleAssignment(user, canonicalRoleByAlias))
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.groupingBy(
+                            RoleAssignment::roleName,
+                            LinkedHashMap::new,
+                            Collectors.mapping(
+                                    RoleAssignment::username,
+                                    Collectors.toCollection(() -> new TreeSet<>(String.CASE_INSENSITIVE_ORDER))
+                            )
+                    ));
+        }
+
+        return roles.stream()
+                .map(role -> toRoleSummary(role, usernamesByRole))
                 .toList();
     }
 
@@ -137,22 +159,17 @@ public class AuthServiceImpl implements AuthService {
         return new AuthenticationFailedException("Invalid username or password");
     }
 
-    private RoleSummaryResponse toRoleSummary(Role role, List<UserAccount> users) {
-        Set<String> usernames = users.stream()
-                .filter(user -> user.getRoleId() != null
-                        ? role.getId().equals(user.getRoleId())
-                        : role.matchesUserRole(user.getStoredRole()))
-                .map(UserAccount::getUsername)
-                .filter(Objects::nonNull)
-                .collect(TreeSet::new, Set::add, Set::addAll);
+    private RoleSummaryResponse toRoleSummary(Role role, Map<String, NavigableSet<String>> usernamesByRole) {
+        NavigableSet<String> usernames = usernamesByRole.getOrDefault(
+                normalizeRoleName(role.getSummaryName()),
+                new TreeSet<>(String.CASE_INSENSITIVE_ORDER)
+        );
 
         return new RoleSummaryResponse(
                 role.getId(),
                 role.getSummaryName(),
                 usernames.size(),
-                usernames.stream()
-                        .sorted(Comparator.naturalOrder())
-                        .toList()
+                new ArrayList<>(usernames)
         );
     }
 
@@ -171,5 +188,47 @@ public class AuthServiceImpl implements AuthService {
         if (!user.isActive()) {
             throw new AuthenticationFailedException("Your account is inactive. Please contact an administrator.");
         }
+    }
+
+    private Map<String, String> buildCanonicalRoleMap(List<Role> roles) {
+        return roles.stream()
+                .flatMap(role -> Stream.of(role.getRoleName(), role.getUniqueName(), role.getSummaryName())
+                        .filter(Objects::nonNull)
+                        .map(alias -> Map.entry(normalizeRoleName(alias), normalizeRoleName(role.getSummaryName()))))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (existing, ignored) -> existing, LinkedHashMap::new));
+    }
+
+    private RoleAssignment toRoleAssignment(UserAccount user, Map<String, String> canonicalRoleByAlias) {
+        String username = user.getUsername();
+        String normalizedRole = normalizeRoleName(user.getRole());
+        if (username == null || username.isBlank() || normalizedRole.isBlank()) {
+            return null;
+        }
+
+        return new RoleAssignment(
+                canonicalRoleByAlias.getOrDefault(normalizedRole, normalizedRole),
+                username
+        );
+    }
+
+    private String normalizeRoleName(String roleName) {
+        return roleName == null ? "" : roleName.trim().toUpperCase();
+    }
+
+    private void runAfterCommit(Runnable action) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            action.run();
+            return;
+        }
+
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                action.run();
+            }
+        });
+    }
+
+    private record RoleAssignment(String roleName, String username) {
     }
 }

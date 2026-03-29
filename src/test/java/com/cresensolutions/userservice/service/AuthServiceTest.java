@@ -3,6 +3,8 @@ package com.cresensolutions.userservice.service;
 import com.cresensolutions.userservice.dto.LoginRequest;
 import com.cresensolutions.userservice.dto.LoginResponse;
 import com.cresensolutions.userservice.dto.OtpRequest;
+import com.cresensolutions.userservice.dto.OtpResponse;
+import com.cresensolutions.userservice.dto.OtpValidationRequest;
 import com.cresensolutions.userservice.dto.ResetPasswordWithOtpRequest;
 import com.cresensolutions.userservice.exception.AuthenticationFailedException;
 import com.cresensolutions.userservice.exception.ResourceNotFoundException;
@@ -25,6 +27,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
 class AuthServiceTest {
@@ -75,7 +78,7 @@ class AuthServiceTest {
         when(userRepository.findByUserNameIgnoreCaseOrEmailIdIgnoreCase(anyString(), anyString()))
                 .thenReturn(Optional.of(user));
         when(passwordEncoder.matches("Password@123", "encoded-Password@123")).thenReturn(true);
-        when(userRepository.saveAndFlush(user)).thenReturn(user);
+        when(userRepository.save(user)).thenReturn(user);
         when(jwtService.generateToken(any(UserAccount.class)))
                 .thenReturn("jwt-token");
 
@@ -94,7 +97,7 @@ class AuthServiceTest {
         when(userRepository.findByUserNameIgnoreCaseOrEmailIdIgnoreCase(anyString(), anyString()))
                 .thenReturn(Optional.of(user));
         when(passwordEncoder.matches("manager123", "encoded-manager123")).thenReturn(true);
-        when(userRepository.saveAndFlush(user)).thenReturn(user);
+        when(userRepository.save(user)).thenReturn(user);
         when(jwtService.generateToken(any(UserAccount.class)))
                 .thenReturn("jwt-token");
 
@@ -103,6 +106,24 @@ class AuthServiceTest {
         assertEquals("vivekmanager", response.username());
         assertEquals("MANAGER", response.role());
         assertEquals(true, response.active());
+    }
+
+    @Test
+    void shouldNormalizeEmailLoginBeforeLookup() {
+        UserAccount user = createUser("vivekmanager", "viveksinhchavda@gmail.com", "encoded-manager123", "MANAGER");
+        when(userRepository.findByUserNameIgnoreCaseOrEmailIdIgnoreCase("viveksinhchavda@gmail.com", "viveksinhchavda@gmail.com"))
+                .thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("manager123", "encoded-manager123")).thenReturn(true);
+        when(userRepository.save(user)).thenReturn(user);
+        when(jwtService.generateToken(any(UserAccount.class))).thenReturn("jwt-token");
+
+        authService.login(new LoginRequest(" VivekSinhChavda@Gmail.com ", "manager123"));
+
+        verify(userRepository).findByUserNameIgnoreCaseOrEmailIdIgnoreCase(
+                "viveksinhchavda@gmail.com",
+                "viveksinhchavda@gmail.com"
+        );
+        verify(authenticationAuditService).logLoginSuccess("vivekmanager");
     }
 
     @Test
@@ -148,7 +169,7 @@ class AuthServiceTest {
         UserAccount employee = createUser("vivekemployee", "vivekcchavda@cresen.com", "encoded-employee123", "EMPLOYEE");
         when(userRepository.findByEmailIdIgnoreCase("vivekcchavda@cresen.com"))
                 .thenReturn(Optional.of(employee));
-        when(userRepository.saveAndFlush(employee)).thenReturn(employee);
+        when(userRepository.save(employee)).thenReturn(employee);
         when(passwordEncoder.encode("NewPass@123")).thenReturn("encoded-NewPass@123");
         when(jwtService.generateToken(any(UserAccount.class)))
                 .thenReturn("jwt-token");
@@ -163,7 +184,7 @@ class AuthServiceTest {
         assertEquals("jwt-token", response.token());
         assertEquals("Password reset successful", response.message());
         assertEquals("encoded-NewPass@123", employee.getPassword());
-        verify(userRepository).saveAndFlush(employee);
+        verify(userRepository).save(employee);
         verify(passwordEncoder).encode("NewPass@123");
         verify(otpService).validateOtp(employee, "123456");
         verify(otpService).clearOtp(employee);
@@ -210,6 +231,53 @@ class AuthServiceTest {
 
         verify(emailService)
                 .sendPasswordResetOtp("vivekcchavda@cresen.com", "employee", "123456");
+    }
+
+    @Test
+    void shouldVerifyPasswordResetOtp() {
+        UserAccount employee = createUser("employee", "vivekcchavda@cresen.com", "encoded-employee123", "EMPLOYEE");
+        when(userRepository.findByEmailIdIgnoreCase("vivekcchavda@cresen.com"))
+                .thenReturn(Optional.of(employee));
+
+        OtpResponse response = authService.verifyPasswordResetOtp(
+                new OtpValidationRequest(" VivekCChavda@Cresen.com ", "123456")
+        );
+
+        assertEquals("OTP verified successfully.", response.message());
+        verify(otpService).validateOtp(employee, "123456");
+    }
+
+    @Test
+    void shouldRejectUnknownEmailDuringOtpRequest() {
+        when(userRepository.findByEmailIdIgnoreCase("vivek@gmail.com"))
+                .thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> authService.requestPasswordResetOtp(new OtpRequest("vivek@gmail.com")));
+
+        verify(emailService, never()).sendPasswordResetOtp(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void shouldRejectInactiveUserDuringOtpRequest() {
+        UserAccount employee = createUser(
+                "employee",
+                "vivekcchavda@cresen.com",
+                "encoded-employee123",
+                "EMPLOYEE",
+                false
+        );
+        when(userRepository.findByEmailIdIgnoreCase("vivekcchavda@cresen.com"))
+                .thenReturn(Optional.of(employee));
+
+        AuthenticationFailedException exception = assertThrows(
+                AuthenticationFailedException.class,
+                () -> authService.requestPasswordResetOtp(new OtpRequest("vivekcchavda@cresen.com"))
+        );
+
+        assertEquals("Your account is inactive. Please contact an administrator.", exception.getMessage());
+        verify(otpService, never()).createOtp(employee);
+        verify(emailService, never()).sendPasswordResetOtp(anyString(), anyString(), anyString());
     }
 
     private Role toRole(String roleName) {

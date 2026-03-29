@@ -12,6 +12,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.when;
@@ -31,6 +32,15 @@ class RoleSummaryServiceTest {
     @Mock
     private AuthenticationAuditService authenticationAuditService;
 
+    @Mock
+    private OtpService otpService;
+
+    @Mock
+    private EmailService emailService;
+
+    @Mock
+    private org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
+
     @InjectMocks
     private AuthServiceImpl authService;
 
@@ -47,7 +57,7 @@ class RoleSummaryServiceTest {
         managerOne.assignRole(managerRole);
 
         when(roleRepository.findAllByOrderByIdAsc()).thenReturn(List.of(adminRole, managerRole));
-        when(userRepository.findAllByOrderByUserNameAsc()).thenReturn(List.of(adminOne, adminTwo, managerOne));
+        when(userRepository.streamAllByOrderByUserNameAsc()).thenReturn(Stream.of(adminOne, adminTwo, managerOne));
 
         List<RoleSummaryResponse> summary = authService.fetchRoleSummary();
 
