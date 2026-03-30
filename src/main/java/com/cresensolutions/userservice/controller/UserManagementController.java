@@ -47,7 +47,7 @@ public class UserManagementController {
     @DeleteMapping("/{userId}")
     public void deleteUser(
             @PathVariable Long userId,
-            @RequestParam @NotBlank(message = "Actor username is required") String actorUsername
+            @RequestParam @NotBlank(message = "Username is required") String actorUsername
     ) {
         userManagementService.deleteUser(userId, actorUsername);
     }

@@ -8,8 +8,8 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public record CreateUserRequest(
-        @NotBlank(message = "Actor username is required")
-        @Size(max = 100, message = "Actor username must not exceed 100 characters")
+        @NotBlank(message = "Username is required")
+        @Size(max = 100, message = "Username must not exceed 100 characters")
         String actorUsername,
 
         String companyId,
