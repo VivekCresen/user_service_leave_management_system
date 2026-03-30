@@ -30,13 +30,13 @@ class EmailServiceImplTest {
         MimeMessage message = new MimeMessage(Session.getInstance(new Properties()));
         EmailServiceImpl emailService = new EmailServiceImpl(mailSender, mailProperties);
 
-        when(mailProperties.fromAddress()).thenReturn("noreply@cresen.com");
+        when(mailProperties.fromAddress()).thenReturn("viveksinhchavda@gmail.com");
         when(mailProperties.logoPath()).thenReturn("");
         when(mailSender.createMimeMessage()).thenReturn(message);
         doThrow(new MailSendException("SMTP rejected message")).when(mailSender).send(message);
 
         assertDoesNotThrow(() -> emailService.sendNewUserCreatedEmail(
-                "employee@cresen.com",
+                "viveksinhchavda@gmail.com",
                 "New Employee",
                 42L,
                 "CRESEN042",

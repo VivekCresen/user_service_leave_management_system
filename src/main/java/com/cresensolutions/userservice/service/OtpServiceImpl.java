@@ -82,7 +82,7 @@ public class OtpServiceImpl implements OtpService {
 
     private Optional<PasswordResetOtp> findOtpRecord(UserAccount user, String normalizedEmail) {
         if (user != null && user.getId() != null) {
-            Optional<PasswordResetOtp> otpByUserId = otpRepository.findByUserId(user.getId());
+            Optional<PasswordResetOtp> otpByUserId = otpRepository.findByUser_Id(user.getId());
             if (otpByUserId.isPresent()) {
                 return otpByUserId;
             }
