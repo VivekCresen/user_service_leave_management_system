@@ -28,15 +28,6 @@ public record CreateUserRequest(
         String email,
 
         @NotBlank(message = "Password is required")
-        @Size(
-                min = ValidationPatterns.PASSWORD_MIN_LENGTH,
-                max = ValidationPatterns.PASSWORD_MAX_LENGTH,
-                message = "Password must be between 8 and 255 characters"
-        )
-        @Pattern(
-                regexp = ValidationPatterns.STRICT_PASSWORD_REGEX,
-                message = ValidationPatterns.STRICT_PASSWORD_MESSAGE
-        )
         String password,
 
         @NotBlank(message = "Role is required")

@@ -41,7 +41,6 @@ class EmailServiceImplTest {
                 42L,
                 "CRESEN042",
                 "new.employee",
-                "TempPass@123",
                 "EMPLOYEE",
                 "http://localhost:4200/forgot-password"
         ));

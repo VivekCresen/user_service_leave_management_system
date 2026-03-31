@@ -99,7 +99,8 @@ public class UserManagementServiceImpl implements UserManagementService {
         String fullName = requireTrimmedValue(request.fullName(), "Full name is required");
         String username = requireTrimmedValue(request.username(), "Username is required");
         String email = requireTrimmedValue(request.email(), "Email is required").toLowerCase(Locale.ROOT);
-        String password = requireTrimmedValue(request.password(), "Password is required");
+        String base64Password = requireTrimmedValue(request.password(), "Password is required");
+        String password = new String(java.util.Base64.getDecoder().decode(base64Password), java.nio.charset.StandardCharsets.UTF_8);
         String roleName = requireTrimmedValue(request.role(), "Role is required").toUpperCase(Locale.ROOT);
         String gender = requireTrimmedValue(request.gender(), "Gender is required");
 
@@ -135,7 +136,6 @@ public class UserManagementServiceImpl implements UserManagementService {
                 savedUser.getId(),
                 savedUser.getCompanyId(),
                 savedUser.getUsername(),
-                password,
                 savedUser.getRole(),
                 mailProperties.forgotPasswordUrl()
         ));
@@ -152,7 +152,8 @@ public class UserManagementServiceImpl implements UserManagementService {
         String email = requireTrimmedValue(request.email(), "Email is required").toLowerCase(Locale.ROOT);
         String roleName = requireTrimmedValue(request.role(), "Role is required").toUpperCase(Locale.ROOT);
         String gender = requireTrimmedValue(request.gender(), "Gender is required");
-        String password = normalizeOptionalValue(request.password());
+        String rawPassword = normalizeOptionalValue(request.password());
+        String password = rawPassword != null ? new String(java.util.Base64.getDecoder().decode(rawPassword), java.nio.charset.StandardCharsets.UTF_8) : null;
         UserAccount target = userRepository.findDetailedById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
 

@@ -32,7 +32,7 @@ public class EmailServiceImpl implements EmailService {
     @Async("auditTaskExecutor")
     public void sendPasswordResetOtp(String email, String fullName, String otp) {
         if (mailProperties.fromAddress().isBlank()) {
-            LOGGER.warn("Mail sender is not configured. OTP for {} is {}", email, otp);
+            LOGGER.warn("Mail sender is not configured. Skipping password reset OTP email for {}", email);
             return;
         }
 
@@ -65,7 +65,6 @@ public class EmailServiceImpl implements EmailService {
             Long userId,
             String companyId,
             String username,
-            String password,
             String role,
             String forgotPasswordLink
     ) {
@@ -84,7 +83,7 @@ public class EmailServiceImpl implements EmailService {
                   Hello %s,
                 </p>
                 <p style="margin:0 0 18px;color:#475569;font-size:15px;line-height:1.7;">
-                  Your Cresen Solutions account has been created successfully. You can sign in with the credentials below.
+                  Your Cresen Solutions account has been created successfully. For security, we do not send passwords by email.
                 </p>
                 <table role="presentation" style="width:100%%;border-collapse:separate;border-spacing:0 10px;margin:0 0 18px;">
                   <tr>
@@ -103,18 +102,14 @@ public class EmailServiceImpl implements EmailService {
                     <td style="padding:12px 14px;border-radius:14px 0 0 14px;background:#f8fafc;color:#64748b;font-size:13px;font-weight:700;">Role</td>
                     <td style="padding:12px 14px;border-radius:0 14px 14px 0;background:#ffffff;border:1px solid #e2e8f0;border-left:0;color:#0f172a;font-size:14px;">%s</td>
                   </tr>
-                  <tr>
-                    <td style="padding:12px 14px;border-radius:14px 0 0 14px;background:#f8fafc;color:#64748b;font-size:13px;font-weight:700;">Password</td>
-                    <td style="padding:12px 14px;border-radius:0 14px 14px 0;background:#ffffff;border:1px solid #e2e8f0;border-left:0;color:#0f172a;font-size:14px;font-weight:700;">%s</td>
-                  </tr>
                 </table>
                 <div style="margin:0 0 18px;padding:18px;border-radius:18px;background:linear-gradient(135deg,#ecfeff,#fff7ed);border:1px solid #dbeafe;">
-                  <p style="margin:0 0 12px;color:#0f172a;font-size:15px;font-weight:700;">Reset your password anytime</p>
+                  <p style="margin:0 0 12px;color:#0f172a;font-size:15px;font-weight:700;">Set your password securely</p>
                   <p style="margin:0 0 14px;color:#475569;font-size:14px;line-height:1.7;">
-                    For security, we recommend changing your password after your first login.
+                    Use the button below to create or reset your password before signing in.
                   </p>
                   <a href="%s" style="display:inline-block;padding:12px 18px;border-radius:12px;background:#0f8b8d;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;">
-                    Reset Password
+                    Set Password
                   </a>
                 </div>
                 <p style="margin:0;color:#64748b;font-size:13px;line-height:1.7;">
@@ -127,7 +122,6 @@ public class EmailServiceImpl implements EmailService {
                 companyId,
                 username,
                 role,
-                password,
                 resetLink,
                 resetLink,
                 resetLink

@@ -98,7 +98,7 @@ class UserManagementServiceTest {
                 "Another Admin",
                 "admin-2",
                 "admin2@cresen.com",
-                "Admin@123",
+                "QWRtaW5AMTIz",
                 "ADMIN",
                 true,
                 "Male"
@@ -154,7 +154,7 @@ class UserManagementServiceTest {
                 "New Employee",
                 "new.employee",
                 "new.employee@cresen.com",
-                "TempPass@123",
+                "VGVtcFBhc3NAMTIz",
                 "EMPLOYEE",
                 true,
                 "Female"
@@ -187,7 +187,6 @@ class UserManagementServiceTest {
                 eq(savedUser.getId()),
                 eq("CRESEN004"),
                 eq("new.employee"),
-                eq("TempPass@123"),
                 eq("EMPLOYEE"),
                 eq("http://localhost:4200/forgot-password")
         );
@@ -204,7 +203,7 @@ class UserManagementServiceTest {
                 "New Employee",
                 "new.employee",
                 "employee1@cresen.com",
-                "TempPass@123",
+                "VGVtcFBhc3NAMTIz",
                 "EMPLOYEE",
                 true,
                 "Female"

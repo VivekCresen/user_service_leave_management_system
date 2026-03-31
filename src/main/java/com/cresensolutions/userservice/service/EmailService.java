@@ -10,7 +10,6 @@ public interface EmailService {
             Long userId,
             String companyId,
             String username,
-            String password,
             String role,
             String forgotPasswordLink
     );
