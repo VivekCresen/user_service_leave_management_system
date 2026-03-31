@@ -69,7 +69,14 @@ public class AuthServiceImpl implements AuthService {
 
         ensureActiveUser(user);
 
-        if (!passwordEncoder.matches(request.password(), user.getPassword())) {
+        String decodedPassword;
+        try {
+            decodedPassword = new String(java.util.Base64.getDecoder().decode(request.password()), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException e) {
+            throw failedLogin(loginValue);
+        }
+
+        if (!passwordEncoder.matches(decodedPassword, user.getPassword())) {
             throw failedLogin(loginValue);
         }
 
@@ -114,7 +121,8 @@ public class AuthServiceImpl implements AuthService {
         ensureActiveUser(user);
 
         otpService.validateOtp(user, request.otp());
-        user.setPassword(passwordEncoder.encode(request.newPassword()));
+        String decodedNewPassword = new String(java.util.Base64.getDecoder().decode(request.newPassword()), java.nio.charset.StandardCharsets.UTF_8);
+        user.setPassword(passwordEncoder.encode(decodedNewPassword));
         UserAccount savedUser = userRepository.save(user);
         otpService.clearOtp(user);
         runAfterCommit(() -> authenticationAuditService.logPasswordReset(email));

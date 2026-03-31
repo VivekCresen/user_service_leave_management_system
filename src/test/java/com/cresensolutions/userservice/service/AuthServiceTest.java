@@ -82,7 +82,7 @@ class AuthServiceTest {
         when(jwtService.generateToken(any(UserAccount.class)))
                 .thenReturn("jwt-token");
 
-        LoginResponse response = authService.login(new LoginRequest("vivekadmin", "Password@123"));
+        LoginResponse response = authService.login(new LoginRequest("vivekadmin", "UGFzc3dvcmRAMTIz"));
 
         assertEquals("vivekadmin", response.username());
         assertEquals("ADMIN", response.role());
@@ -101,7 +101,7 @@ class AuthServiceTest {
         when(jwtService.generateToken(any(UserAccount.class)))
                 .thenReturn("jwt-token");
 
-        LoginResponse response = authService.login(new LoginRequest("viveksinhchavda@gmail.com", "manager123"));
+        LoginResponse response = authService.login(new LoginRequest("viveksinhchavda@gmail.com", "bWFuYWdlcjEyMw=="));
 
         assertEquals("vivekmanager", response.username());
         assertEquals("MANAGER", response.role());
@@ -117,7 +117,7 @@ class AuthServiceTest {
         when(userRepository.save(user)).thenReturn(user);
         when(jwtService.generateToken(any(UserAccount.class))).thenReturn("jwt-token");
 
-        authService.login(new LoginRequest(" VivekSinhChavda@Gmail.com ", "manager123"));
+        authService.login(new LoginRequest(" VivekSinhChavda@Gmail.com ", "bWFuYWdlcjEyMw=="));
 
         verify(userRepository).findByUserNameIgnoreCaseOrEmailIdIgnoreCase(
                 "viveksinhchavda@gmail.com",
@@ -133,7 +133,7 @@ class AuthServiceTest {
         when(passwordEncoder.matches("wrong-password", "encoded-Password@123")).thenReturn(false);
 
         assertThrows(AuthenticationFailedException.class,
-                () -> authService.login(new LoginRequest("vivekadmin", "wrong-password")));
+                () -> authService.login(new LoginRequest("vivekadmin", "d3JvbmctcGFzc3dvcmQ=")));
     }
 
     @Test
@@ -148,7 +148,7 @@ class AuthServiceTest {
                 )));
 
         AuthenticationFailedException exception = assertThrows(AuthenticationFailedException.class,
-                () -> authService.login(new LoginRequest("vivekadmin", "Password@123")));
+                () -> authService.login(new LoginRequest("vivekadmin", "UGFzc3dvcmRAMTIz")));
 
         assertEquals("Your account is inactive. Please contact an administrator.", exception.getMessage());
     }
@@ -159,7 +159,7 @@ class AuthServiceTest {
                 .thenReturn(Optional.empty());
 
         assertThrows(AuthenticationFailedException.class,
-                () -> authService.login(new LoginRequest("unknown-user", "admin123")));
+                () -> authService.login(new LoginRequest("unknown-user", "YWRtaW4xMjM=")));
 
         verify(authenticationAuditService).logLoginFailure("unknown-user");
     }
@@ -175,7 +175,7 @@ class AuthServiceTest {
                 .thenReturn("jwt-token");
 
         LoginResponse response = authService.resetPassword(
-                new ResetPasswordWithOtpRequest("vivekcchavda@cresen.com", "123456", "NewPass@123")
+                new ResetPasswordWithOtpRequest("vivekcchavda@cresen.com", "123456", "TmV3UGFzc0AxMjM=")
         );
 
         assertEquals("vivekemployee", response.username());
@@ -197,7 +197,7 @@ class AuthServiceTest {
                 .thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class,
-                () -> authService.resetPassword(new ResetPasswordWithOtpRequest("vivek@gmail.com", "123456", "NewPass@123")));
+                () -> authService.resetPassword(new ResetPasswordWithOtpRequest("vivek@gmail.com", "123456", "TmV3UGFzc0AxMjM=")));
     }
 
     @Test
@@ -214,7 +214,7 @@ class AuthServiceTest {
 
         AuthenticationFailedException exception = assertThrows(AuthenticationFailedException.class,
                 () -> authService.resetPassword(
-                        new ResetPasswordWithOtpRequest("vivekcchavda@cresen.com", "123456", "NewPass@123")
+                        new ResetPasswordWithOtpRequest("vivekcchavda@cresen.com", "123456", "TmV3UGFzc0AxMjM=")
                 ));
 
         assertEquals("Your account is inactive. Please contact an administrator.", exception.getMessage());
