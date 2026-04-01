@@ -33,6 +33,8 @@ public record CreateUserRequest(
         @NotBlank(message = "Role is required")
         String role,
 
+        String managerUsername,
+
         @NotNull(message = "Active status is required")
         Boolean active,
 
@@ -48,6 +50,7 @@ public record CreateUserRequest(
         username = username == null ? null : username.trim();
         email = email == null ? null : email.trim().toLowerCase();
         role = role == null ? null : role.trim().toUpperCase();
+        managerUsername = managerUsername == null ? null : managerUsername.trim();
         gender = gender == null ? null : gender.trim();
     }
 }

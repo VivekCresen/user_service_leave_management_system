@@ -1,0 +1,65 @@
+spring:
+  application:
+    name: user-service
+  config:
+    import: optional:configserver:http://localhost:8888
+  datasource:
+    url: jdbc:postgresql://localhost:5432/leave_management_system
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: true
+    open-in-view: false
+  sql:
+    init:
+      mode: always
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${MAIL_USERNAME:viveksinhchavda@gmail.com}
+    password: ${MAIL_PASSWORD:drauzuufuzlddfwy}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+server:
+  port: 8081
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+
+security:
+  jwt:
+    secret: ${JWT_SECRET:Q3Jlc2VuTGVhdmVNYW5hZ2VtZW50U3lzdGVtSldUU2VjcmV0S2V5Rm9ySFMyNTY=}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+  otp:
+    expiration-minutes: ${OTP_EXPIRATION_MINUTES:10}
+
+app:
+  mail:
+    from: ${APP_MAIL_FROM:${MAIL_USERNAME:viveksinhchavda@gmail.com}}
+    logo-path: ${APP_MAIL_LOGO_PATH:/home/vivek/Documents/CresenProject/front-end/frontend_leave_management_system/public/assets/logo-6.png}
+  frontend:
+    forgot-password-url: ${FRONTEND_FORGOT_PASSWORD_URL:http://localhost:4200/forgot-password}
+    login-url: ${FRONTEND_LOGIN_URL:http://localhost:4200/login}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html

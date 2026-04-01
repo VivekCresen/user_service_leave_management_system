@@ -100,6 +100,7 @@ class UserManagementServiceTest {
                 "admin2@cresen.com",
                 "QWRtaW5AMTIz",
                 "ADMIN",
+                null,
                 true,
                 "Male"
         );
@@ -156,6 +157,7 @@ class UserManagementServiceTest {
                 "new.employee@cresen.com",
                 "VGVtcFBhc3NAMTIz",
                 "EMPLOYEE",
+                "manager-1",
                 true,
                 "Female"
         );
@@ -173,6 +175,7 @@ class UserManagementServiceTest {
         when(userRepository.count()).thenReturn(3L);
         when(userRepository.findByUserNameIgnoreCase("new.employee")).thenReturn(Optional.empty());
         when(userRepository.findByEmailIdIgnoreCase("new.employee@cresen.com")).thenReturn(Optional.empty());
+        when(userRepository.findByUserNameIgnoreCase("manager-1")).thenReturn(Optional.of(existingManager));
         when(passwordEncoder.encode("TempPass@123")).thenReturn("encoded-temp-password");
         when(roleRepository.findByUniqueNameIgnoreCase("EMPLOYEE")).thenReturn(Optional.of(EMPLOYEE_ROLE));
         when(userRepository.save(any(UserAccount.class))).thenReturn(savedUser);
@@ -180,7 +183,9 @@ class UserManagementServiceTest {
 
         userManagementService.createUser(request);
 
-        verify(userRepository).save(argThat(user -> "CRESEN004".equals(user.getCompanyId())));
+        verify(userRepository).save(argThat(user ->
+                "CRESEN004".equals(user.getCompanyId()) && "manager-1".equals(user.getCreatedBy())
+        ));
         verify(emailService).sendNewUserCreatedEmail(
                 eq("new.employee@cresen.com"),
                 eq("New Employee"),
@@ -205,6 +210,7 @@ class UserManagementServiceTest {
                 "employee1@cresen.com",
                 "VGVtcFBhc3NAMTIz",
                 "EMPLOYEE",
+                "manager-1",
                 true,
                 "Female"
         );
@@ -220,6 +226,38 @@ class UserManagementServiceTest {
         );
 
         assertEquals("Email is already in use.", exception.getMessage());
+        verify(userRepository, never()).save(any(UserAccount.class));
+    }
+
+    @Test
+    void shouldRequireManagerWhenAdminCreatesEmployee() {
+        UserAccount admin = createUser("admin", "admin@cresen.com", "ADMIN");
+        CreateUserRequest request = new CreateUserRequest(
+                "admin",
+                null,
+                "New Employee",
+                "new.employee",
+                "new.employee@cresen.com",
+                "VGVtcFBhc3NAMTIz",
+                "EMPLOYEE",
+                "   ",
+                true,
+                "Female"
+        );
+
+        when(userRepository.findByUserNameIgnoreCaseOrEmailIdIgnoreCase("admin", "admin"))
+                .thenReturn(Optional.of(admin));
+        when(userRepository.findByUserNameIgnoreCase("new.employee")).thenReturn(Optional.empty());
+        when(userRepository.findByEmailIdIgnoreCase("new.employee@cresen.com")).thenReturn(Optional.empty());
+        when(passwordEncoder.encode("TempPass@123")).thenReturn("encoded-temp-password");
+        when(roleRepository.findByUniqueNameIgnoreCase("EMPLOYEE")).thenReturn(Optional.of(EMPLOYEE_ROLE));
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> userManagementService.createUser(request)
+        );
+
+        assertEquals("Manager is required for employee creation.", exception.getMessage());
         verify(userRepository, never()).save(any(UserAccount.class));
     }
 
@@ -258,6 +296,97 @@ class UserManagementServiceTest {
         assertEquals("Female", employee.getGender());
         verify(passwordEncoder, never()).encode(anyString());
         verify(userRepository).save(employee);
+    }
+
+    @Test
+    void shouldSendRoleChangedEmailWhenAdminUpdatesUserRole() {
+        UserAccount admin = createUser("admin", "admin@cresen.com", "ADMIN");
+        UserAccount employee = createUser("employee-1", "employee1@cresen.com", "EMPLOYEE");
+        employee.setCompanyId("CRESEN004");
+        employee.setFullName("Existing Employee");
+        employee.setGender("Female");
+        employee.setCreatedBy("manager-1");
+        UpdateUserRequest request = new UpdateUserRequest(
+                "admin",
+                "CRESEN004",
+                "Existing Employee",
+                "employee-1",
+                "employee1@cresen.com",
+                "",
+                "MANAGER",
+                true,
+                "Female"
+        );
+
+        when(userRepository.findByUserNameIgnoreCaseOrEmailIdIgnoreCase("admin", "admin"))
+                .thenReturn(Optional.of(admin));
+        when(userRepository.findDetailedById(11L)).thenReturn(Optional.of(employee));
+        when(userRepository.findByUserNameIgnoreCase("employee-1")).thenReturn(Optional.empty());
+        when(userRepository.findByEmailIdIgnoreCase("employee1@cresen.com")).thenReturn(Optional.empty());
+        when(roleRepository.findByUniqueNameIgnoreCase("MANAGER")).thenReturn(Optional.of(MANAGER_ROLE));
+        when(userRepository.save(employee)).thenReturn(employee);
+        when(mailProperties.loginUrl()).thenReturn("http://localhost:4200/login");
+
+        userManagementService.updateUser(11L, request);
+
+        verify(emailService).sendUserRoleChangedEmail(
+                eq("employee1@cresen.com"),
+                eq("Existing Employee"),
+                eq("employee-1"),
+                eq("EMPLOYEE"),
+                eq("MANAGER"),
+                eq("admin"),
+                eq("ADMIN"),
+                eq("http://localhost:4200/login")
+        );
+    }
+
+    @Test
+    void shouldSendDeletionEmailWhenAdminDeletesManager() {
+        UserAccount admin = createUser("admin", "admin@cresen.com", "ADMIN");
+        UserAccount manager = createUser("manager-1", "manager1@cresen.com", "MANAGER");
+        manager.setFullName("Manager One");
+
+        when(userRepository.findByUserNameIgnoreCaseOrEmailIdIgnoreCase("admin", "admin"))
+                .thenReturn(Optional.of(admin));
+        when(userRepository.findDetailedById(15L)).thenReturn(Optional.of(manager));
+
+        userManagementService.deleteUser(15L, "admin");
+
+        verify(userRepository).delete(manager);
+        verify(emailService).sendUserDeletedEmail(
+                eq("manager1@cresen.com"),
+                eq("Manager One"),
+                eq("manager-1"),
+                eq("MANAGER"),
+                eq("admin"),
+                eq("ADMIN")
+        );
+    }
+
+    @Test
+    void shouldSendDeletionEmailWhenManagerDeletesEmployee() {
+        UserAccount manager = createUser("manager-1", "manager1@cresen.com", "MANAGER");
+        manager.setFullName("Manager One");
+        UserAccount employee = createUser("employee-1", "employee1@cresen.com", "EMPLOYEE");
+        employee.setFullName("Employee One");
+        employee.setCreatedBy("manager-1");
+
+        when(userRepository.findByUserNameIgnoreCaseOrEmailIdIgnoreCase("manager-1", "manager-1"))
+                .thenReturn(Optional.of(manager));
+        when(userRepository.findDetailedById(21L)).thenReturn(Optional.of(employee));
+
+        userManagementService.deleteUser(21L, "manager-1");
+
+        verify(userRepository).delete(employee);
+        verify(emailService).sendUserDeletedEmail(
+                eq("employee1@cresen.com"),
+                eq("Employee One"),
+                eq("employee-1"),
+                eq("EMPLOYEE"),
+                eq("manager-1"),
+                eq("MANAGER")
+        );
     }
 
     private UserAccount createUser(String username, String email, String roleName) {

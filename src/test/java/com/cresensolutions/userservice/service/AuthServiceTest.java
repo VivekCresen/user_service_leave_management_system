@@ -197,7 +197,7 @@ class AuthServiceTest {
                 .thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class,
-                () -> authService.resetPassword(new ResetPasswordWithOtpRequest("vivek@gmail.com", "123456", "TmV3UGFzc0AxMjM=")));
+                () -> authService.resetPassword(new ResetPasswordWithOtpRequest("vivek@gmail.com", "123456", "NewPass@123")));
     }
 
     @Test

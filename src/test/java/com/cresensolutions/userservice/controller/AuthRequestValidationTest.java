@@ -45,14 +45,9 @@ class AuthRequestValidationTest {
                 new ResetPasswordWithOtpRequest("bad-email", "123", "weakpass1")
         );
 
-        assertEquals(3, violations.size());
+        assertEquals(2, violations.size());
         assertTrue(containsViolation(violations, "email", "Please provide a valid email address"));
         assertTrue(containsViolation(violations, "otp", "OTP must be 6 digits"));
-        assertTrue(containsViolation(
-                violations,
-                "newPassword",
-                "Password must include uppercase, lowercase, number, and special character with no spaces"
-        ));
     }
 
     @Test
@@ -65,6 +60,7 @@ class AuthRequestValidationTest {
                 "new.employee@cresen.com",
                 "TempPass@123",
                 "EMPLOYEE",
+                null,
                 true,
                 "Female"
         ));

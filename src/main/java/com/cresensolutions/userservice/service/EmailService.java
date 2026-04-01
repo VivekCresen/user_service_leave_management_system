@@ -13,4 +13,24 @@ public interface EmailService {
             String role,
             String forgotPasswordLink
     );
+
+    void sendUserDeletedEmail(
+            String email,
+            String fullName,
+            String username,
+            String role,
+            String deletedByUsername,
+            String deletedByRole
+    );
+
+    void sendUserRoleChangedEmail(
+            String email,
+            String fullName,
+            String username,
+            String previousRole,
+            String newRole,
+            String changedByUsername,
+            String changedByRole,
+            String loginUrl
+    );
 }

@@ -1,0 +1,39 @@
+spring:
+  config:
+    import: ""
+  datasource:
+    url: jdbc:h2:mem:leave_management_system;MODE=MySQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    open-in-view: false
+  sql:
+    init:
+      mode: never
+  mail:
+    host: localhost
+    port: 2525
+    username: test
+    password: test
+
+eureka:
+  client:
+    enabled: false
+
+security:
+  jwt:
+    secret: Q3Jlc2VuTGVhdmVNYW5hZ2VtZW50U3lzdGVtSldUU2VjcmV0S2V5Rm9ySFMyNTY=
+    expiration-ms: 86400000
+  otp:
+    expiration-minutes: 10
+
+app:
+  mail:
+    from: viveksinhchavda@gmail.com
+    logo-path: /home/vivek/Documents/CresenProject/front-end/frontend_leave_management_system/public/assets/logo-6.png
+  frontend:
+    forgot-password-url: http://localhost:4200/forgot-password
+    login-url: http://localhost:4200/login

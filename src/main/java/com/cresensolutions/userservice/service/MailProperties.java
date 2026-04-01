@@ -8,5 +8,7 @@ public interface MailProperties {
 
     String forgotPasswordUrl();
 
+    String loginUrl();
+
     String logoPath();
 }

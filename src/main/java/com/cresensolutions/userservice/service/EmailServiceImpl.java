@@ -130,6 +130,126 @@ public class EmailServiceImpl implements EmailService {
         sendHtmlEmail(email, "Cresen Solutions Account Created", "Your account is ready", content);
     }
 
+    @Override
+    @Async("auditTaskExecutor")
+    public void sendUserDeletedEmail(
+            String email,
+            String fullName,
+            String username,
+            String role,
+            String deletedByUsername,
+            String deletedByRole
+    ) {
+        if (mailProperties.fromAddress().isBlank()) {
+            LOGGER.warn("Mail sender is not configured. Deletion email for {} cannot be sent.", email);
+            return;
+        }
+
+        String content = """
+                <p style="margin:0 0 12px;color:#475569;font-size:15px;line-height:1.7;">
+                  Hello %s,
+                </p>
+                <p style="margin:0 0 18px;color:#475569;font-size:15px;line-height:1.7;">
+                  Your Cresen Solutions account has been deleted and you no longer have access to the Leave Management System.
+                </p>
+                <table role="presentation" style="width:100%%;border-collapse:separate;border-spacing:0 10px;margin:0 0 18px;">
+                  <tr>
+                    <td style="width:38%%;padding:12px 14px;border-radius:14px 0 0 14px;background:#f8fafc;color:#64748b;font-size:13px;font-weight:700;">Username</td>
+                    <td style="padding:12px 14px;border-radius:0 14px 14px 0;background:#ffffff;border:1px solid #e2e8f0;border-left:0;color:#0f172a;font-size:14px;">%s</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:12px 14px;border-radius:14px 0 0 14px;background:#f8fafc;color:#64748b;font-size:13px;font-weight:700;">Role</td>
+                    <td style="padding:12px 14px;border-radius:0 14px 14px 0;background:#ffffff;border:1px solid #e2e8f0;border-left:0;color:#0f172a;font-size:14px;">%s</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:12px 14px;border-radius:14px 0 0 14px;background:#f8fafc;color:#64748b;font-size:13px;font-weight:700;">Deleted by</td>
+                    <td style="padding:12px 14px;border-radius:0 14px 14px 0;background:#ffffff;border:1px solid #e2e8f0;border-left:0;color:#0f172a;font-size:14px;">%s (%s)</td>
+                  </tr>
+                </table>
+                <div style="padding:16px;border-radius:16px;background:#f8fafc;border:1px solid #e2e8f0;">
+                  <p style="margin:0;color:#475569;font-size:14px;line-height:1.7;">
+                    If you believe this account deletion happened by mistake, please contact your administrator or HR team.
+                  </p>
+                </div>
+                """.formatted(fullName, username, role, deletedByUsername, deletedByRole);
+
+        sendHtmlEmail(email, "Cresen Solutions Account Deleted", "Your account has been removed", content);
+    }
+
+    @Override
+    @Async("auditTaskExecutor")
+    public void sendUserRoleChangedEmail(
+            String email,
+            String fullName,
+            String username,
+            String previousRole,
+            String newRole,
+            String changedByUsername,
+            String changedByRole,
+            String loginUrl
+    ) {
+        if (mailProperties.fromAddress().isBlank()) {
+            LOGGER.warn("Mail sender is not configured. Role change email for {} cannot be sent.", email);
+            return;
+        }
+
+        String resolvedLoginUrl = (loginUrl == null || loginUrl.isBlank())
+                ? mailProperties.loginUrl()
+                : loginUrl.trim();
+
+        String content = """
+                <p style="margin:0 0 12px;color:#475569;font-size:15px;line-height:1.7;">
+                  Hello %s,
+                </p>
+                <p style="margin:0 0 18px;color:#475569;font-size:15px;line-height:1.7;">
+                  Your role in the Cresen Solutions Leave Management System has been updated. Please sign in again to view your new dashboard and access.
+                </p>
+                <table role="presentation" style="width:100%%;border-collapse:separate;border-spacing:0 10px;margin:0 0 18px;">
+                  <tr>
+                    <td style="width:38%%;padding:12px 14px;border-radius:14px 0 0 14px;background:#f8fafc;color:#64748b;font-size:13px;font-weight:700;">Username</td>
+                    <td style="padding:12px 14px;border-radius:0 14px 14px 0;background:#ffffff;border:1px solid #e2e8f0;border-left:0;color:#0f172a;font-size:14px;">%s</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:12px 14px;border-radius:14px 0 0 14px;background:#f8fafc;color:#64748b;font-size:13px;font-weight:700;">Previous role</td>
+                    <td style="padding:12px 14px;border-radius:0 14px 14px 0;background:#ffffff;border:1px solid #e2e8f0;border-left:0;color:#0f172a;font-size:14px;">%s</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:12px 14px;border-radius:14px 0 0 14px;background:#f8fafc;color:#64748b;font-size:13px;font-weight:700;">New role</td>
+                    <td style="padding:12px 14px;border-radius:0 14px 14px 0;background:#ffffff;border:1px solid #e2e8f0;border-left:0;color:#0f172a;font-size:14px;">%s</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:12px 14px;border-radius:14px 0 0 14px;background:#f8fafc;color:#64748b;font-size:13px;font-weight:700;">Changed by</td>
+                    <td style="padding:12px 14px;border-radius:0 14px 14px 0;background:#ffffff;border:1px solid #e2e8f0;border-left:0;color:#0f172a;font-size:14px;">%s (%s)</td>
+                  </tr>
+                </table>
+                <div style="margin:0 0 18px;padding:18px;border-radius:18px;background:linear-gradient(135deg,#ecfeff,#fff7ed);border:1px solid #dbeafe;">
+                  <p style="margin:0 0 12px;color:#0f172a;font-size:15px;font-weight:700;">Open your updated dashboard</p>
+                  <p style="margin:0 0 14px;color:#475569;font-size:14px;line-height:1.7;">
+                    Use the button below to sign in and review your new dashboard, permissions, and workspace.
+                  </p>
+                  <a href="%s" style="display:inline-block;padding:12px 18px;border-radius:12px;background:#0f8b8d;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;">
+                    Login To Dashboard
+                  </a>
+                </div>
+                <p style="margin:0;color:#64748b;font-size:13px;line-height:1.7;">
+                  If the button does not work, copy and open this link:<br>
+                  <a href="%s" style="color:#0f766e;text-decoration:none;">%s</a>
+                </p>
+                """.formatted(
+                fullName,
+                username,
+                previousRole,
+                newRole,
+                changedByUsername,
+                changedByRole,
+                resolvedLoginUrl,
+                resolvedLoginUrl,
+                resolvedLoginUrl
+        );
+
+        sendHtmlEmail(email, "Cresen Solutions Role Updated", "Your role has changed", content);
+    }
+
     private void sendHtmlEmail(String email, String subject, String headerTitle, String contentHtml) {
         try {
             MimeMessage message = mailSender.createMimeMessage();

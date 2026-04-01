@@ -8,7 +8,6 @@ public record LoginRequest(
         @Size(max = 100, message = "Username or email must not exceed 100 characters")
         String username,
         @NotBlank(message = "Password is required")
-        @Size(max = 255, message = "Password must not exceed 255 characters")
         String password
 ) {
 

@@ -30,31 +30,29 @@ public class JwtServiceImpl implements JwtService {
     @Override
     public String generateToken(UserAccount user) {
         Instant now = Instant.now();
-        String role = user == null ? "" : user.getRole();
 
         return Jwts.builder()
-                .subject(user.getUsername())
-                .claims(Map.of(
-                        "email", user.getEmail(),
-                        "role", role == null ? "" : role,
-                        "fullName", user.getFullName(),
-                        "active", user.isActive()
-                ))
-                .issuedAt(Date.from(now))
-                .expiration(Date.from(now.plusMillis(expirationMs)))
+                .subject(resolveSubject(user))
+                .claims(buildClaims(user))
+                .issuedAt(toDate(now))
+                .expiration(calculateExpiration(now))
                 .signWith(signingKey)
                 .compact();
     }
 
     @Override
     public String extractUsername(String token) {
-        return extractAllClaims(token).getSubject();
+        return extractSubject(token);
     }
 
     @Override
     public boolean isTokenValid(String token, String expectedUsername) {
         Claims claims = extractAllClaims(token);
-        return expectedUsername.equals(claims.getSubject()) && claims.getExpiration().after(new Date());
+        return matchesExpectedUsername(claims, expectedUsername) && isNotExpired(claims);
+    }
+
+    private String extractSubject(String token) {
+        return extractAllClaims(token).getSubject();
     }
 
     private Claims extractAllClaims(String token) {
@@ -63,5 +61,51 @@ public class JwtServiceImpl implements JwtService {
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
+    }
+
+    private String resolveSubject(UserAccount user) {
+        return user == null ? "" : user.getUsername();
+    }
+
+    private Map<String, Object> buildClaims(UserAccount user) {
+        if (user == null) {
+            return Map.of(
+                    "email", "",
+                    "role", "",
+                    "fullName", "",
+                    "active", false
+            );
+        }
+
+        return Map.of(
+                "email", user.getEmail(),
+                "role", resolveRole(user),
+                "fullName", user.getFullName(),
+                "active", user.isActive()
+        );
+    }
+
+    private String resolveRole(UserAccount user) {
+        return user.getRole() == null ? "" : user.getRole();
+    }
+
+    private Date calculateExpiration(Instant issuedAt) {
+        return toDate(issuedAt.plusMillis(expirationMs));
+    }
+
+    private Date toDate(Instant instant) {
+        return Date.from(instant);
+    }
+
+    private boolean matchesExpectedUsername(Claims claims, String expectedUsername) {
+        return expectedUsername.equals(claims.getSubject());
+    }
+
+    private boolean isNotExpired(Claims claims) {
+        return claims.getExpiration().after(currentDate());
+    }
+
+    private Date currentDate() {
+        return new Date();
     }
 }

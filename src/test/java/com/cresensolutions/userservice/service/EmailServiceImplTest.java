@@ -47,4 +47,50 @@ class EmailServiceImplTest {
 
         verify(mailSender).send(message);
     }
+
+    @Test
+    void shouldSwallowMailSendErrorsWhenSendingDeletionEmail() {
+        MimeMessage message = new MimeMessage(Session.getInstance(new Properties()));
+        EmailServiceImpl emailService = new EmailServiceImpl(mailSender, mailProperties);
+
+        when(mailProperties.fromAddress()).thenReturn("viveksinhchavda@gmail.com");
+        when(mailProperties.logoPath()).thenReturn("");
+        when(mailSender.createMimeMessage()).thenReturn(message);
+        doThrow(new MailSendException("SMTP rejected message")).when(mailSender).send(message);
+
+        assertDoesNotThrow(() -> emailService.sendUserDeletedEmail(
+                "viveksinhchavda@gmail.com",
+                "Former Employee",
+                "former.employee",
+                "EMPLOYEE",
+                "admin",
+                "ADMIN"
+        ));
+
+        verify(mailSender).send(message);
+    }
+
+    @Test
+    void shouldSwallowMailSendErrorsWhenSendingRoleChangedEmail() {
+        MimeMessage message = new MimeMessage(Session.getInstance(new Properties()));
+        EmailServiceImpl emailService = new EmailServiceImpl(mailSender, mailProperties);
+
+        when(mailProperties.fromAddress()).thenReturn("viveksinhchavda@gmail.com");
+        when(mailProperties.logoPath()).thenReturn("");
+        when(mailSender.createMimeMessage()).thenReturn(message);
+        doThrow(new MailSendException("SMTP rejected message")).when(mailSender).send(message);
+
+        assertDoesNotThrow(() -> emailService.sendUserRoleChangedEmail(
+                "viveksinhchavda@gmail.com",
+                "Existing Employee",
+                "employee.one",
+                "EMPLOYEE",
+                "MANAGER",
+                "admin",
+                "ADMIN",
+                "http://localhost:4200/login"
+        ));
+
+        verify(mailSender).send(message);
+    }
 }

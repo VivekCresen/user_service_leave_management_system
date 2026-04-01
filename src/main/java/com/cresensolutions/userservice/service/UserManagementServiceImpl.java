@@ -10,6 +10,8 @@ import com.cresensolutions.userservice.model.UserAccount;
 import com.cresensolutions.userservice.repository.RoleRepository;
 import com.cresensolutions.userservice.repository.UserRepository;
 import com.cresensolutions.userservice.validation.ValidationPatterns;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -18,7 +20,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -33,6 +37,7 @@ import java.util.stream.Stream;
 @Service
 @Transactional(readOnly = true)
 public class UserManagementServiceImpl implements UserManagementService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(UserManagementServiceImpl.class);
     private static final String COMPANY_ID_PREFIX = "CRESEN";
     private static final int COMPANY_ID_NUMBER_WIDTH = 3;
     private static final int MINIMUM_NEXT_COMPANY_ID = 4;
@@ -63,6 +68,7 @@ public class UserManagementServiceImpl implements UserManagementService {
     @Override
     public UserDashboardResponse getDashboard(String actorUsername) {
         UserAccount actor = loadActiveActor(actorUsername);
+        LOGGER.debug("Loading dashboard for actor {}", actor.getUsername());
         ManagedUserResponse actorResponse = toManagedUserResponse(actor, actor, false);
         List<UserAccountView> visibleUsers = loadVisibleUsers(actor);
         CompletableFuture<List<ManagedUserResponse>> usersFuture = CompletableFuture.supplyAsync(
@@ -99,9 +105,9 @@ public class UserManagementServiceImpl implements UserManagementService {
         String fullName = requireTrimmedValue(request.fullName(), "Full name is required");
         String username = requireTrimmedValue(request.username(), "Username is required");
         String email = requireTrimmedValue(request.email(), "Email is required").toLowerCase(Locale.ROOT);
-        String base64Password = requireTrimmedValue(request.password(), "Password is required");
-        String password = new String(java.util.Base64.getDecoder().decode(base64Password), java.nio.charset.StandardCharsets.UTF_8);
+        String password = decodeRequiredBase64Password(request.password());
         String roleName = requireTrimmedValue(request.role(), "Role is required").toUpperCase(Locale.ROOT);
+        String managerUsername = normalizeOptionalValue(request.managerUsername());
         String gender = requireTrimmedValue(request.gender(), "Gender is required");
 
         ensureCanCreateRole(actor, roleName);
@@ -126,10 +132,11 @@ public class UserManagementServiceImpl implements UserManagementService {
         user.setGender(gender);
         user.setCreateDate(now);
         user.setUpdateDate(now);
-        user.setCreatedBy(actor.getUsername());
+        user.setCreatedBy(resolveOwnerUsername(actor, roleName, managerUsername));
         user.setUpdatedBy(actor.getUsername());
 
         UserAccount savedUser = userRepository.save(user);
+        LOGGER.info("User {} created by {} with role {}", savedUser.getUsername(), actor.getUsername(), savedUser.getRole());
         runAfterCommit(() -> emailService.sendNewUserCreatedEmail(
                 savedUser.getEmail(),
                 savedUser.getFullName(),
@@ -152,8 +159,7 @@ public class UserManagementServiceImpl implements UserManagementService {
         String email = requireTrimmedValue(request.email(), "Email is required").toLowerCase(Locale.ROOT);
         String roleName = requireTrimmedValue(request.role(), "Role is required").toUpperCase(Locale.ROOT);
         String gender = requireTrimmedValue(request.gender(), "Gender is required");
-        String rawPassword = normalizeOptionalValue(request.password());
-        String password = rawPassword != null ? new String(java.util.Base64.getDecoder().decode(rawPassword), java.nio.charset.StandardCharsets.UTF_8) : null;
+        String password = decodeOptionalBase64Password(request.password());
         UserAccount target = userRepository.findDetailedById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
 
@@ -162,6 +168,8 @@ public class UserManagementServiceImpl implements UserManagementService {
         validateOptionalPassword(password);
         validateUniqueUsername(target.getId(), username);
         validateUniqueEmail(target.getId(), email);
+        String previousRole = target.getRole();
+        boolean roleChangedByAdmin = isRole(actor, "ADMIN") && !isRole(previousRole, roleName);
 
         target.setFullName(fullName);
         target.setUsername(username);
@@ -176,7 +184,21 @@ public class UserManagementServiceImpl implements UserManagementService {
             target.setPassword(passwordEncoder.encode(password));
         }
 
-        return toManagedUserResponse(userRepository.save(target), actor, true);
+        UserAccount updatedUser = userRepository.save(target);
+        LOGGER.info("User {} updated by {}", updatedUser.getUsername(), actor.getUsername());
+        if (roleChangedByAdmin) {
+            runAfterCommit(() -> emailService.sendUserRoleChangedEmail(
+                    updatedUser.getEmail(),
+                    updatedUser.getFullName(),
+                    updatedUser.getUsername(),
+                    previousRole,
+                    updatedUser.getRole(),
+                    actor.getUsername(),
+                    actor.getRole(),
+                    mailProperties.loginUrl()
+            ));
+        }
+        return toManagedUserResponse(updatedUser, actor, true);
     }
 
     @Override
@@ -188,10 +210,24 @@ public class UserManagementServiceImpl implements UserManagementService {
 
         ensureManageableTarget(actor, target);
         if (isSameUser(actor, target)) {
+            LOGGER.warn("User {} attempted to delete their own account", actor.getUsername());
             throw new IllegalArgumentException("You cannot delete your own account.");
         }
 
+        String deletedUserEmail = target.getEmail();
+        String deletedUserFullName = target.getFullName();
+        String deletedUserUsername = target.getUsername();
+        String deletedUserRole = target.getRole();
         userRepository.delete(target);
+        LOGGER.info("User {} deleted by {}", target.getUsername(), actor.getUsername());
+        runAfterCommit(() -> emailService.sendUserDeletedEmail(
+                deletedUserEmail,
+                deletedUserFullName,
+                deletedUserUsername,
+                deletedUserRole,
+                actor.getUsername(),
+                actor.getRole()
+        ));
     }
 
     private UserAccount loadActiveActor(String actorUsername) {
@@ -268,6 +304,30 @@ public class UserManagementServiceImpl implements UserManagementService {
         if (isRole(actor, "MANAGER") && !"EMPLOYEE".equalsIgnoreCase(requestedRole)) {
             throw new AccessDeniedException("Managers can create employees only.");
         }
+    }
+
+    private String resolveOwnerUsername(UserAccount actor, String roleName, String managerUsername) {
+        if (isRole(actor, "MANAGER")) {
+            return actor.getUsername();
+        }
+
+        if (isRole(actor, "ADMIN") && "EMPLOYEE".equalsIgnoreCase(roleName)) {
+            String normalizedManagerUsername = requireTrimmedValue(managerUsername, "Manager is required for employee creation.");
+            UserAccount manager = userRepository.findByUserNameIgnoreCase(normalizedManagerUsername)
+                    .orElseThrow(() -> new IllegalArgumentException("Selected manager was not found."));
+
+            if (!manager.isActive()) {
+                throw new IllegalArgumentException("Selected manager must be active.");
+            }
+
+            if (!isRole(manager, "MANAGER")) {
+                throw new IllegalArgumentException("Selected user must have the manager role.");
+            }
+
+            return manager.getUsername();
+        }
+
+        return actor.getUsername();
     }
 
     private void ensureCanAssignRole(UserAccount actor, UserAccount target, String requestedRole) {
@@ -370,6 +430,28 @@ public class UserManagementServiceImpl implements UserManagementService {
 
         if (!password.matches(ValidationPatterns.STRICT_PASSWORD_REGEX)) {
             throw new IllegalArgumentException(ValidationPatterns.STRICT_PASSWORD_MESSAGE);
+        }
+    }
+
+    private String decodeRequiredBase64Password(String password) {
+        String encodedPassword = requireTrimmedValue(password, "Password is required");
+        return decodeBase64Password(encodedPassword);
+    }
+
+    private String decodeOptionalBase64Password(String password) {
+        String encodedPassword = normalizeOptionalValue(password);
+        if (encodedPassword == null || encodedPassword.isBlank()) {
+            return encodedPassword;
+        }
+
+        return decodeBase64Password(encodedPassword);
+    }
+
+    private String decodeBase64Password(String encodedPassword) {
+        try {
+            return new String(Base64.getDecoder().decode(encodedPassword), StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("Password must be valid Base64.");
         }
     }
 
