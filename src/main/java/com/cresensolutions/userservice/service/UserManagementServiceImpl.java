@@ -28,11 +28,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 @Service
 @Transactional(readOnly = true)
@@ -71,22 +69,15 @@ public class UserManagementServiceImpl implements UserManagementService {
         LOGGER.debug("Loading dashboard for actor {}", actor.getUsername());
         ManagedUserResponse actorResponse = toManagedUserResponse(actor, actor, false);
         List<UserAccountView> visibleUsers = loadVisibleUsers(actor);
-        CompletableFuture<List<ManagedUserResponse>> usersFuture = CompletableFuture.supplyAsync(
-                () -> visibleUsers.stream()
-                        .map(user -> toManagedUserResponse(user, actor))
-                        .sorted(Comparator.comparing(ManagedUserResponse::username, String.CASE_INSENSITIVE_ORDER))
-                        .toList(),
-                dashboardTaskExecutor
-        );
-        CompletableFuture<UserDashboardMetrics> metricsFuture = CompletableFuture.supplyAsync(
-                () -> summarizeUsers(visibleUsers),
-                dashboardTaskExecutor
-        );
-        UserDashboardMetrics metrics = metricsFuture.join();
+        List<ManagedUserResponse> managedUsers = visibleUsers.stream()
+                .map(user -> toManagedUserResponse(user, actor))
+                .sorted(Comparator.comparing(ManagedUserResponse::username, String.CASE_INSENSITIVE_ORDER))
+                .toList();
+        UserDashboardMetrics metrics = summarizeUsers(visibleUsers);
 
         return new UserDashboardResponse(
                 actorResponse,
-                usersFuture.join(),
+                managedUsers,
                 assignableRolesFor(actor),
                 canManageUsers(actor),
                 metrics.totalUsers(),
@@ -184,7 +175,7 @@ public class UserManagementServiceImpl implements UserManagementService {
             target.setPassword(passwordEncoder.encode(password));
         }
 
-        UserAccount updatedUser = userRepository.save(target);
+        UserAccount updatedUser = target;
         LOGGER.info("User {} updated by {}", updatedUser.getUsername(), actor.getUsername());
         if (roleChangedByAdmin) {
             runAfterCommit(() -> emailService.sendUserRoleChangedEmail(
@@ -242,11 +233,24 @@ public class UserManagementServiceImpl implements UserManagementService {
     }
 
     private List<UserAccountView> loadVisibleUsers(UserAccount actor) {
-        try (Stream<UserAccount> users = userRepository.streamAllByOrderByUserNameAsc()) {
-            return users.filter(user -> canViewUser(actor, user))
+        if (isRole(actor, "ADMIN")) {
+            return userRepository.findAllDetailedByOrderByUserNameAsc().stream()
                     .map(this::toUserAccountView)
                     .toList();
         }
+
+        if (isRole(actor, "MANAGER")) {
+            return userRepository.findAllByCreatedByIgnoreCaseAndRoleIgnoreCaseOrderByUserNameAsc(
+                            actor.getUsername(),
+                            "EMPLOYEE"
+                    ).stream()
+                    .map(this::toUserAccountView)
+                    .toList();
+        }
+
+        return userRepository.findAllByIdOrderByUserNameAsc(actor.getId()).stream()
+                .map(this::toUserAccountView)
+                .toList();
     }
 
     private List<String> assignableRolesFor(UserAccount actor) {
@@ -355,26 +359,23 @@ public class UserManagementServiceImpl implements UserManagementService {
     }
 
     private void validateUniqueUsername(Long currentUserId, String username) {
-        userRepository.findByUserNameIgnoreCase(username)
-                .filter(existing -> !existing.getId().equals(currentUserId))
-                .ifPresent(existing -> {
-                    throw new IllegalArgumentException("Username is already in use.");
-                });
+        boolean exists = currentUserId == null
+                ? userRepository.existsByUserNameIgnoreCase(username)
+                : userRepository.existsByUserNameIgnoreCaseAndIdNot(username, currentUserId);
+
+        if (exists) {
+            throw new IllegalArgumentException("Username is already in use.");
+        }
     }
 
     private String generateNextCompanyId() {
-        List<String> existingCompanyIds = userRepository.findAllCompanyIds().stream()
-                .map(String::trim)
-                .filter(value -> !value.isBlank())
-                .toList();
-
         int nextNumber = Math.max(
                 MINIMUM_NEXT_COMPANY_ID,
-                Math.max((int) userRepository.count() + 1, highestExistingCompanyId(existingCompanyIds) + 1)
+                userRepository.findHighestCompanyIdNumber(COMPANY_ID_PREFIX, COMPANY_ID_PREFIX.length() + 1) + 1
         );
 
         String candidate = formatCompanyId(nextNumber);
-        while (containsCompanyId(existingCompanyIds, candidate)) {
+        while (userRepository.existsByCompanyIdIgnoreCase(candidate)) {
             nextNumber++;
             candidate = formatCompanyId(nextNumber);
         }
@@ -382,40 +383,18 @@ public class UserManagementServiceImpl implements UserManagementService {
         return candidate;
     }
 
-    private int highestExistingCompanyId(List<String> companyIds) {
-        return companyIds.stream()
-                .mapToInt(this::extractCompanyIdNumber)
-                .max()
-                .orElse(MINIMUM_NEXT_COMPANY_ID - 1);
-    }
-
-    private int extractCompanyIdNumber(String companyId) {
-        if (!companyId.regionMatches(true, 0, COMPANY_ID_PREFIX, 0, COMPANY_ID_PREFIX.length())) {
-            return -1;
-        }
-
-        String suffix = companyId.substring(COMPANY_ID_PREFIX.length()).trim();
-        if (suffix.isEmpty() || !suffix.chars().allMatch(Character::isDigit)) {
-            return -1;
-        }
-
-        return Integer.parseInt(suffix);
-    }
-
-    private boolean containsCompanyId(List<String> companyIds, String candidate) {
-        return companyIds.stream().anyMatch(existing -> existing.equalsIgnoreCase(candidate));
-    }
-
     private String formatCompanyId(int number) {
         return COMPANY_ID_PREFIX + String.format(Locale.ROOT, "%0" + COMPANY_ID_NUMBER_WIDTH + "d", number);
     }
 
     private void validateUniqueEmail(Long currentUserId, String email) {
-        userRepository.findByEmailIdIgnoreCase(email)
-                .filter(existing -> !existing.getId().equals(currentUserId))
-                .ifPresent(existing -> {
-                    throw new IllegalArgumentException("Email is already in use.");
-                });
+        boolean exists = currentUserId == null
+                ? userRepository.existsByEmailIdIgnoreCase(email)
+                : userRepository.existsByEmailIdIgnoreCaseAndIdNot(email, currentUserId);
+
+        if (exists) {
+            throw new IllegalArgumentException("Email is already in use.");
+        }
     }
 
     private void validateOptionalPassword(String password) {
@@ -586,16 +565,6 @@ public class UserManagementServiceImpl implements UserManagementService {
 
     private String normalizeRoleName(String roleName) {
         return roleName == null ? "" : roleName.trim().toUpperCase(Locale.ROOT);
-    }
-
-    private boolean canViewUser(UserAccount actor, UserAccount user) {
-        if (isRole(actor, "ADMIN")) {
-            return true;
-        }
-        if (isRole(actor, "MANAGER")) {
-            return isManagedEmployee(actor, user);
-        }
-        return isSameUser(actor, user);
     }
 
     private boolean isSameUser(UserAccount actor, UserAccount user) {

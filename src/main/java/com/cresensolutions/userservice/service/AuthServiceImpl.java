@@ -78,9 +78,8 @@ public class AuthServiceImpl implements AuthService {
         }
 
         user.setLastLogin(Instant.now());
-        UserAccount savedUser = userRepository.save(user);
         runAfterCommit(() -> authenticationAuditService.logLoginSuccess(user.getUsername()));
-        return toLoginResponse(savedUser, "Login successful");
+        return toLoginResponse(user, "Login successful");
     }
 
     @Override
@@ -112,19 +111,15 @@ public class AuthServiceImpl implements AuthService {
     @Transactional
     public LoginResponse resetPassword(ResetPasswordWithOtpRequest request) {
         String email = normalizeEmail(request.email());
-        UserAccount user = userRepository.findByEmailIdIgnoreCase(email)
-                .orElseThrow(() -> new ResourceNotFoundException("No account found with that email."));
-
-        ensureActiveUser(user);
+        UserAccount user = loadActiveUserByEmail(email);
         String decodedPassword = decodeBase64Password(request.newPassword());
         validatePassword(decodedPassword);
 
         otpService.validateOtp(user, request.otp());
         user.setPassword(passwordEncoder.encode(decodedPassword));
-        UserAccount savedUser = userRepository.save(user);
         otpService.clearOtp(user);
         runAfterCommit(() -> authenticationAuditService.logPasswordReset(email));
-        return toLoginResponse(savedUser, "Password reset successful");
+        return toLoginResponse(user, "Password reset successful");
     }
 
     @Override
@@ -132,20 +127,17 @@ public class AuthServiceImpl implements AuthService {
         List<Role> roles = roleRepository.findAllByOrderByIdAsc();
         Map<String, String> canonicalRoleByAlias = buildCanonicalRoleMap(roles);
         Map<String, NavigableSet<String>> usernamesByRole;
-
-        try (Stream<UserAccount> users = userRepository.streamAllByOrderByUserNameAsc()) {
-            usernamesByRole = users
-                    .map(user -> toRoleAssignment(user, canonicalRoleByAlias))
-                    .filter(Objects::nonNull)
-                    .collect(Collectors.groupingBy(
-                            RoleAssignment::roleName,
-                            LinkedHashMap::new,
-                            Collectors.mapping(
-                                    RoleAssignment::username,
-                                    Collectors.toCollection(() -> new TreeSet<>(String.CASE_INSENSITIVE_ORDER))
-                            )
-                    ));
-        }
+        usernamesByRole = userRepository.findRoleAssignments().stream()
+                .map(user -> toRoleAssignment(user, canonicalRoleByAlias))
+                .filter(Objects::nonNull)
+                .collect(Collectors.groupingBy(
+                        RoleAssignment::roleName,
+                        LinkedHashMap::new,
+                        Collectors.mapping(
+                                RoleAssignment::username,
+                                Collectors.toCollection(() -> new TreeSet<>(String.CASE_INSENSITIVE_ORDER))
+                        )
+                ));
 
         return roles.stream()
                 .map(role -> toRoleSummary(role, usernamesByRole))
@@ -196,15 +188,22 @@ public class AuthServiceImpl implements AuthService {
         }
     }
 
+    private UserAccount loadActiveUserByEmail(String email) {
+        UserAccount user = userRepository.findByEmailIdIgnoreCase(email)
+                .orElseThrow(() -> new ResourceNotFoundException("No account found with that email."));
+        ensureActiveUser(user);
+        return user;
+    }
+
     private Map<String, String> buildCanonicalRoleMap(List<Role> roles) {
         return roles.stream()
                 .flatMap(role -> Stream.of(role.getRoleName(), role.getUniqueName(), role.getSummaryName())
                         .filter(Objects::nonNull)
                         .map(alias -> Map.entry(normalizeRoleName(alias), normalizeRoleName(role.getSummaryName()))))
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (existing, ignored) -> existing, LinkedHashMap::new));
+                .collect(Collectors.toMap(entry -> entry.getKey(), entry -> entry.getValue(), (existing, ignored) -> existing, LinkedHashMap::new));
     }
 
-    private RoleAssignment toRoleAssignment(UserAccount user, Map<String, String> canonicalRoleByAlias) {
+    private RoleAssignment toRoleAssignment(UserRepository.RoleAssignmentView user, Map<String, String> canonicalRoleByAlias) {
         String username = user.getUsername();
         String normalizedRole = normalizeRoleName(user.getRole());
         if (username == null || username.isBlank() || normalizedRole.isBlank()) {

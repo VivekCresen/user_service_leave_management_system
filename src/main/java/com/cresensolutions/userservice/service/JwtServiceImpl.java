@@ -2,8 +2,10 @@ package com.cresensolutions.userservice.service;
 
 import com.cresensolutions.userservice.model.UserAccount;
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
+import io.jsonwebtoken.security.InvalidKeyException;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -31,13 +33,21 @@ public class JwtServiceImpl implements JwtService {
     public String generateToken(UserAccount user) {
         Instant now = Instant.now();
 
-        return Jwts.builder()
-                .subject(resolveSubject(user))
-                .claims(buildClaims(user))
-                .issuedAt(toDate(now))
-                .expiration(calculateExpiration(now))
-                .signWith(signingKey)
-                .compact();
+        return getCompact(user, now);
+    }
+
+    private String getCompact(UserAccount user, Instant now) {
+        try {
+            return Jwts.builder()
+                    .subject(resolveSubject(user))
+                    .claims(buildClaims(user))
+                    .issuedAt(toDate(now))
+                    .expiration(calculateExpiration(now))
+                    .signWith(signingKey)
+                    .compact();
+        } catch (InvalidKeyException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
@@ -47,8 +57,12 @@ public class JwtServiceImpl implements JwtService {
 
     @Override
     public boolean isTokenValid(String token, String expectedUsername) {
-        Claims claims = extractAllClaims(token);
-        return matchesExpectedUsername(claims, expectedUsername) && isNotExpired(claims);
+        try {
+            Claims claims = extractAllClaims(token);
+            return matchesExpectedUsername(claims, expectedUsername) && isNotExpired(claims);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private String extractSubject(String token) {
@@ -56,11 +70,17 @@ public class JwtServiceImpl implements JwtService {
     }
 
     private Claims extractAllClaims(String token) {
-        return Jwts.parser()
-                .verifyWith(signingKey)
-                .build()
-                .parseSignedClaims(token)
-                .getPayload();
+        try {
+            return Jwts.parser()
+                    .verifyWith(signingKey)
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload();
+        } catch (JwtException e) {
+            throw new RuntimeException(e);
+        } catch (IllegalArgumentException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private String resolveSubject(UserAccount user) {
@@ -68,21 +88,25 @@ public class JwtServiceImpl implements JwtService {
     }
 
     private Map<String, Object> buildClaims(UserAccount user) {
-        if (user == null) {
-            return Map.of(
-                    "email", "",
-                    "role", "",
-                    "fullName", "",
-                    "active", false
-            );
-        }
+        try {
+            if (user == null) {
+                return Map.of(
+                        "email", "",
+                        "role", "",
+                        "fullName", "",
+                        "active", false
+                );
+            }
 
-        return Map.of(
-                "email", user.getEmail(),
-                "role", resolveRole(user),
-                "fullName", user.getFullName(),
-                "active", user.isActive()
-        );
+            return Map.of(
+                    "email", user.getEmail(),
+                    "role", resolveRole(user),
+                    "fullName", user.getFullName(),
+                    "active", user.isActive()
+            );
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private String resolveRole(UserAccount user) {

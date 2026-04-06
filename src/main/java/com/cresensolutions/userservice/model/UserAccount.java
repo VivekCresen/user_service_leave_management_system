@@ -64,7 +64,7 @@ public class UserAccount {
     @Column(name = "gender")
     private String gender;
 
-    protected UserAccount() {
+    public UserAccount() {
     }
 
     public UserAccount(String fullName, String email, String username, String password, String role) {
