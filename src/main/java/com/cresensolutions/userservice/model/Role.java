@@ -8,8 +8,6 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
-import lombok.Getter;
-
 import java.time.Instant;
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -17,7 +15,6 @@ import java.util.Set;
 
 @Entity
 @Table(name = "role")
-@Getter
 public class Role {
 
     @Id
@@ -55,6 +52,38 @@ public class Role {
         this.id = id;
         this.roleName = roleName;
         this.uniqueName = uniqueName;
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public String getRoleName() {
+        return roleName;
+    }
+
+    public String getUniqueName() {
+        return uniqueName;
+    }
+
+    public String getRoleDescription() {
+        return roleDescription;
+    }
+
+    public Instant getCreateDate() {
+        return createDate;
+    }
+
+    public Instant getUpdateDate() {
+        return updateDate;
+    }
+
+    public String getCreatedBy() {
+        return createdBy;
+    }
+
+    public String getUpdatedBy() {
+        return updatedBy;
     }
 
     public String getSummaryName() {
