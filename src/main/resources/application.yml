@@ -17,6 +17,9 @@ spring:
         default_batch_fetch_size: 50
         jdbc:
           fetch_size: 50
+
+  flowable:
+    database-schema-update: true
   sql:
     init:
       mode: always
