@@ -61,7 +61,7 @@ public interface UserRepository extends JpaRepository<UserAccount, Long> {
 
     @Query(value = """
             select coalesce(max(cast(substring(trim(company_id), :prefixLengthPlusOne) as integer)), 0)
-            from user_profile
+            from user_schema.user_profile
             where company_id is not null
               and upper(trim(company_id)) like concat(upper(:prefix), '%')
               and substring(trim(company_id), :prefixLengthPlusOne) ~ '^[0-9]+$'

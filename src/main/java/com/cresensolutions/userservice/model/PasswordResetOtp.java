@@ -16,6 +16,7 @@ import java.time.Instant;
 
 @Entity
 @Table(
+        schema = "user_schema",
         name = "otp",
         indexes = {
                 @Index(name = "idx_otp_email_id", columnList = "email_id"),

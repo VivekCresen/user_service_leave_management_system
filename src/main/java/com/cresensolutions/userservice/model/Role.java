@@ -14,7 +14,7 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 @Entity
-@Table(name = "role")
+@Table(schema = "user_schema", name = "role")
 public class Role {
 
     @Id

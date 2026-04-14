@@ -14,7 +14,7 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 
 @Entity
-@Table(name = "user_profile")
+@Table(schema = "user_schema", name = "user_profile")
 public class UserAccount {
 
     @Id
