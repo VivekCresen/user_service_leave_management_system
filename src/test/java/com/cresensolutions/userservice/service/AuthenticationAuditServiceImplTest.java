@@ -1,5 +1,6 @@
 package com.cresensolutions.userservice.service;
 
+import com.cresensolutions.userservice.service.Impl.AuthenticationAuditServiceImpl;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -15,11 +16,11 @@ class AuthenticationAuditServiceImplTest {
 
     @Test
     void testLogLoginFailure() {
-        assertDoesNotThrow(() -> authenticationAuditService.logLoginFailure("testuser@example.com"));
+        assertDoesNotThrow(() -> authenticationAuditService.logLoginFailure("testuser@cresensolutions.com"));
     }
 
     @Test
     void testLogPasswordReset() {
-        assertDoesNotThrow(() -> authenticationAuditService.logPasswordReset("testuser@example.com"));
+        assertDoesNotThrow(() -> authenticationAuditService.logPasswordReset("testuser@cresensolutions.com"));
     }
 }

@@ -1,5 +1,6 @@
-package com.cresensolutions.userservice.service;
+package com.cresensolutions.userservice.service.Impl;
 
+import com.cresensolutions.userservice.service.MailProperties;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 

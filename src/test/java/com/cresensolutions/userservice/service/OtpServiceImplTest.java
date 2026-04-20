@@ -4,6 +4,7 @@ import com.cresensolutions.userservice.exception.InvalidOtpException;
 import com.cresensolutions.userservice.model.PasswordResetOtp;
 import com.cresensolutions.userservice.model.UserAccount;
 import com.cresensolutions.userservice.repository.PasswordResetOtpRepository;
+import com.cresensolutions.userservice.service.Impl.OtpServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

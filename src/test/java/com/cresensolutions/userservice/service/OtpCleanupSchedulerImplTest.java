@@ -1,5 +1,6 @@
 package com.cresensolutions.userservice.service;
 
+import com.cresensolutions.userservice.service.Impl.OtpCleanupSchedulerImpl;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;

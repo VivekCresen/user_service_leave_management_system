@@ -1,6 +1,7 @@
-package com.cresensolutions.userservice.service;
+package com.cresensolutions.userservice.service.Impl;
 
 import com.cresensolutions.userservice.model.UserAccount;
+import com.cresensolutions.userservice.service.JwtService;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
@@ -32,11 +33,6 @@ public class JwtServiceImpl implements JwtService {
     @Override
     public String generateToken(UserAccount user) {
         Instant now = Instant.now();
-
-        return getCompact(user, now);
-    }
-
-    private String getCompact(UserAccount user, Instant now) {
         try {
             return Jwts.builder()
                     .subject(resolveSubject(user))

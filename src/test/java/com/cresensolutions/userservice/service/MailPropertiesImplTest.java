@@ -1,5 +1,6 @@
 package com.cresensolutions.userservice.service;
 
+import com.cresensolutions.userservice.service.Impl.MailPropertiesImpl;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;

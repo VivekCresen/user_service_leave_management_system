@@ -1,5 +1,7 @@
-package com.cresensolutions.userservice.service;
+package com.cresensolutions.userservice.service.Impl;
 
+import com.cresensolutions.userservice.service.OtpCleanupScheduler;
+import com.cresensolutions.userservice.service.OtpService;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 

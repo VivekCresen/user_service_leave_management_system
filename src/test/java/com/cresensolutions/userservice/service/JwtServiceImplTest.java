@@ -2,6 +2,7 @@ package com.cresensolutions.userservice.service;
 
 import com.cresensolutions.userservice.model.Role;
 import com.cresensolutions.userservice.model.UserAccount;
+import com.cresensolutions.userservice.service.Impl.JwtServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

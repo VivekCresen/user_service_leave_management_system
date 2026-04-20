@@ -1,4 +1,4 @@
-package com.cresensolutions.userservice.service;
+package com.cresensolutions.userservice.service.Impl;
 
 import com.cresensolutions.userservice.dto.LoginRequest;
 import com.cresensolutions.userservice.dto.LoginResponse;
@@ -13,17 +13,16 @@ import com.cresensolutions.userservice.model.Role;
 import com.cresensolutions.userservice.model.UserAccount;
 import com.cresensolutions.userservice.repository.RoleRepository;
 import com.cresensolutions.userservice.repository.UserRepository;
-import com.cresensolutions.userservice.validation.ValidationPatterns;
+import com.cresensolutions.userservice.service.*;
+import com.cresensolutions.userservice.validation.PasswordUtils;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -69,7 +68,7 @@ public class AuthServiceImpl implements AuthService {
         String loginValue = normalize(request.username());
         UserAccount user = userRepository.findByUserNameIgnoreCaseOrEmailIdIgnoreCase(loginValue, loginValue)
                 .orElseThrow(() -> failedLogin(loginValue));
-        String rawPassword = decodeBase64Password(request.password());
+        String rawPassword = PasswordUtils.decodeBase64(request.password());
 
         ensureActiveUser(user);
 
@@ -85,7 +84,7 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public OtpResponse requestPasswordResetOtp(OtpRequest request) {
-        String email = normalizeEmail(request.email());
+        String email = normalize(request.email());
         UserAccount user = userRepository.findByEmailIdIgnoreCase(email)
                 .orElseThrow(() -> new ResourceNotFoundException("No account found with that email."));
 
@@ -98,7 +97,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public OtpResponse verifyPasswordResetOtp(OtpValidationRequest request) {
-        String email = normalizeEmail(request.email());
+        String email = normalize(request.email());
         UserAccount user = userRepository.findByEmailIdIgnoreCase(email)
                 .orElseThrow(() -> new ResourceNotFoundException("No account found with that email."));
 
@@ -110,10 +109,10 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public LoginResponse resetPassword(ResetPasswordWithOtpRequest request) {
-        String email = normalizeEmail(request.email());
+        String email = normalize(request.email());
         UserAccount user = loadActiveUserByEmail(email);
-        String decodedPassword = decodeBase64Password(request.newPassword());
-        validatePassword(decodedPassword);
+        String decodedPassword = PasswordUtils.decodeBase64(request.newPassword());
+        PasswordUtils.validate(decodedPassword);
 
         otpService.validateOtp(user, request.otp());
         user.setPassword(passwordEncoder.encode(decodedPassword));
@@ -145,10 +144,6 @@ public class AuthServiceImpl implements AuthService {
     }
 
     private String normalize(String value) {
-        return value == null ? "" : value.trim().toLowerCase();
-    }
-
-    private String normalizeEmail(String value) {
         return value == null ? "" : value.trim().toLowerCase();
     }
 
@@ -220,28 +215,6 @@ public class AuthServiceImpl implements AuthService {
         return roleName == null ? "" : roleName.trim().toUpperCase();
     }
 
-    private String decodeBase64Password(String encodedPassword) {
-        try {
-            return new String(Base64.getDecoder().decode(encodedPassword), StandardCharsets.UTF_8);
-        } catch (IllegalArgumentException exception) {
-            throw new IllegalArgumentException("Password must be valid Base64.");
-        }
-    }
-
-    private void validatePassword(String password) {
-        if (password == null || password.isBlank()) {
-            throw new IllegalArgumentException("Password is required");
-        }
-
-        if (password.length() < ValidationPatterns.PASSWORD_MIN_LENGTH
-                || password.length() > ValidationPatterns.PASSWORD_MAX_LENGTH) {
-            throw new IllegalArgumentException("Password must be between 8 and 255 characters");
-        }
-
-        if (!password.matches(ValidationPatterns.STRICT_PASSWORD_REGEX)) {
-            throw new IllegalArgumentException(ValidationPatterns.STRICT_PASSWORD_MESSAGE);
-        }
-    }
 
     private void runAfterCommit(Runnable action) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {

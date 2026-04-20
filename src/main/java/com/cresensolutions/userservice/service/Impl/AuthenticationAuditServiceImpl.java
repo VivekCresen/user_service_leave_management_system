@@ -1,30 +1,29 @@
-package com.cresensolutions.userservice.service;
+package com.cresensolutions.userservice.service.Impl;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.cresensolutions.userservice.service.AuthenticationAuditService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+@Slf4j
 @Service
 public class AuthenticationAuditServiceImpl implements AuthenticationAuditService {
-
-    private static final Logger LOGGER = LoggerFactory.getLogger(AuthenticationAuditServiceImpl.class);
 
     @Override
     @Async("auditTaskExecutor")
     public void logLoginSuccess(String username) {
-        LOGGER.info("Login succeeded for user={}", username);
+        log.info("Login succeeded for user={}", username);
     }
 
     @Override
     @Async("auditTaskExecutor")
     public void logLoginFailure(String usernameOrEmail) {
-        LOGGER.warn("Login failed for identifier={}", usernameOrEmail);
+        log.warn("Login failed for identifier={}", usernameOrEmail);
     }
 
     @Override
     @Async("auditTaskExecutor")
     public void logPasswordReset(String email) {
-        LOGGER.info("Password reset completed for email={}", email);
+        log.info("Password reset completed for email={}", email);
     }
 }

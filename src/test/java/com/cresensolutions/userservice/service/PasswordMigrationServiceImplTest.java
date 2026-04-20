@@ -2,6 +2,7 @@ package com.cresensolutions.userservice.service;
 
 import com.cresensolutions.userservice.model.UserAccount;
 import com.cresensolutions.userservice.repository.UserRepository;
+import com.cresensolutions.userservice.service.Impl.PasswordMigrationServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

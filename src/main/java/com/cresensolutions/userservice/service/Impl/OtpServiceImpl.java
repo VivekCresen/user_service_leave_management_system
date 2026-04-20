@@ -1,9 +1,10 @@
-package com.cresensolutions.userservice.service;
+package com.cresensolutions.userservice.service.Impl;
 
 import com.cresensolutions.userservice.exception.InvalidOtpException;
 import com.cresensolutions.userservice.model.PasswordResetOtp;
 import com.cresensolutions.userservice.model.UserAccount;
 import com.cresensolutions.userservice.repository.PasswordResetOtpRepository;
+import com.cresensolutions.userservice.service.OtpService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

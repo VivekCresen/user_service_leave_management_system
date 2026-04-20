@@ -1,7 +1,8 @@
-package com.cresensolutions.userservice.service;
+package com.cresensolutions.userservice.service.Impl;
 
 import com.cresensolutions.userservice.model.UserAccount;
 import com.cresensolutions.userservice.repository.UserRepository;
+import com.cresensolutions.userservice.service.PasswordMigrationService;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;

@@ -6,6 +6,7 @@ import com.cresensolutions.userservice.model.Role;
 import com.cresensolutions.userservice.model.UserAccount;
 import com.cresensolutions.userservice.repository.RoleRepository;
 import com.cresensolutions.userservice.repository.UserRepository;
+import com.cresensolutions.userservice.service.Impl.UserManagementServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

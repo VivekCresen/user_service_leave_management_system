@@ -1,4 +1,4 @@
-package com.cresensolutions.userservice.service;
+package com.cresensolutions.userservice.service.Impl;
 
 import com.cresensolutions.userservice.dto.CreateUserRequest;
 import com.cresensolutions.userservice.dto.ManagedUserResponse;
@@ -9,9 +9,12 @@ import com.cresensolutions.userservice.model.Role;
 import com.cresensolutions.userservice.model.UserAccount;
 import com.cresensolutions.userservice.repository.RoleRepository;
 import com.cresensolutions.userservice.repository.UserRepository;
-import com.cresensolutions.userservice.validation.ValidationPatterns;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.cresensolutions.userservice.common.UserConstants;
+import com.cresensolutions.userservice.service.EmailService;
+import com.cresensolutions.userservice.service.MailProperties;
+import com.cresensolutions.userservice.service.UserManagementService;
+import com.cresensolutions.userservice.validation.PasswordUtils;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -20,25 +23,19 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.Executor;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @Transactional(readOnly = true)
 public class UserManagementServiceImpl implements UserManagementService {
-    private static final Logger LOGGER = LoggerFactory.getLogger(UserManagementServiceImpl.class);
-    private static final String COMPANY_ID_PREFIX = "CRESEN";
-    private static final int COMPANY_ID_NUMBER_WIDTH = 3;
-    private static final int MINIMUM_NEXT_COMPANY_ID = 4;
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
@@ -66,7 +63,7 @@ public class UserManagementServiceImpl implements UserManagementService {
     @Override
     public UserDashboardResponse getDashboard(String actorUsername) {
         UserAccount actor = loadActiveActor(actorUsername);
-        LOGGER.debug("Loading dashboard for actor {}", actor.getUsername());
+        log.debug("Loading dashboard for actor {}", actor.getUsername());
         ManagedUserResponse actorResponse = toManagedUserResponse(actor, actor, false);
         List<UserAccountView> visibleUsers = loadVisibleUsers(actor);
         List<ManagedUserResponse> managedUsers = visibleUsers.stream()
@@ -127,7 +124,7 @@ public class UserManagementServiceImpl implements UserManagementService {
         user.setUpdatedBy(actor.getUsername());
 
         UserAccount savedUser = userRepository.save(user);
-        LOGGER.info("User {} created by {} with role {}", savedUser.getUsername(), actor.getUsername(), savedUser.getRole());
+        log.info("User {} created by {} with role {}", savedUser.getUsername(), actor.getUsername(), savedUser.getRole());
         runAfterCommit(() -> emailService.sendNewUserCreatedEmail(
                 savedUser.getEmail(),
                 savedUser.getFullName(),
@@ -160,7 +157,7 @@ public class UserManagementServiceImpl implements UserManagementService {
         validateUniqueUsername(target.getId(), username);
         validateUniqueEmail(target.getId(), email);
         String previousRole = target.getRole();
-        boolean roleChangedByAdmin = isRole(actor, "ADMIN") && !isRole(previousRole, roleName);
+        boolean roleChangedByAdmin = isRole(actor, UserConstants.ROLE_ADMIN) && !isRole(previousRole, roleName);
 
         target.setFullName(fullName);
         target.setUsername(username);
@@ -176,7 +173,7 @@ public class UserManagementServiceImpl implements UserManagementService {
         }
 
         UserAccount updatedUser = target;
-        LOGGER.info("User {} updated by {}", updatedUser.getUsername(), actor.getUsername());
+        log.info("User {} updated by {}", updatedUser.getUsername(), actor.getUsername());
         if (roleChangedByAdmin) {
             runAfterCommit(() -> emailService.sendUserRoleChangedEmail(
                     updatedUser.getEmail(),
@@ -200,8 +197,8 @@ public class UserManagementServiceImpl implements UserManagementService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
 
         ensureManageableTarget(actor, target);
-        if (isSameUser(actor, target)) {
-            LOGGER.warn("User {} attempted to delete their own account", actor.getUsername());
+        if (isSameUser(actor, toUserAccountView(target))) {
+            log.warn("User {} attempted to delete their own account", actor.getUsername());
             throw new IllegalArgumentException("You cannot delete your own account.");
         }
 
@@ -210,7 +207,7 @@ public class UserManagementServiceImpl implements UserManagementService {
         String deletedUserUsername = target.getUsername();
         String deletedUserRole = target.getRole();
         userRepository.delete(target);
-        LOGGER.info("User {} deleted by {}", target.getUsername(), actor.getUsername());
+        log.info("User {} deleted by {}", target.getUsername(), actor.getUsername());
         runAfterCommit(() -> emailService.sendUserDeletedEmail(
                 deletedUserEmail,
                 deletedUserFullName,
@@ -233,16 +230,16 @@ public class UserManagementServiceImpl implements UserManagementService {
     }
 
     private List<UserAccountView> loadVisibleUsers(UserAccount actor) {
-        if (isRole(actor, "ADMIN")) {
+        if (isRole(actor, UserConstants.ROLE_ADMIN)) {
             return userRepository.findAllDetailedByOrderByUserNameAsc().stream()
                     .map(this::toUserAccountView)
                     .toList();
         }
 
-        if (isRole(actor, "MANAGER")) {
+        if (isRole(actor, UserConstants.ROLE_MANAGER)) {
             return userRepository.findAllByCreatedByIgnoreCaseAndRoleIgnoreCaseOrderByUserNameAsc(
                             actor.getUsername(),
-                            "EMPLOYEE"
+                            UserConstants.ROLE_EMPLOYEE
                     ).stream()
                     .map(this::toUserAccountView)
                     .toList();
@@ -254,17 +251,17 @@ public class UserManagementServiceImpl implements UserManagementService {
     }
 
     private List<String> assignableRolesFor(UserAccount actor) {
-        if (isRole(actor, "ADMIN")) {
-            return List.of("MANAGER", "EMPLOYEE");
+        if (isRole(actor, UserConstants.ROLE_ADMIN)) {
+            return List.of(UserConstants.ROLE_MANAGER, UserConstants.ROLE_EMPLOYEE);
         }
-        if (isRole(actor, "MANAGER")) {
-            return List.of("EMPLOYEE");
+        if (isRole(actor, UserConstants.ROLE_MANAGER)) {
+            return List.of(UserConstants.ROLE_EMPLOYEE);
         }
         return List.of();
     }
 
     private boolean canManageUsers(UserAccount actor) {
-        return isRole(actor, "ADMIN") || isRole(actor, "MANAGER");
+        return isRole(actor, UserConstants.ROLE_ADMIN) || isRole(actor, UserConstants.ROLE_MANAGER);
     }
 
     private UserDashboardMetrics summarizeUsers(List<UserAccountView> users) {
@@ -280,9 +277,9 @@ public class UserManagementServiceImpl implements UserManagementService {
                 users.size(),
                 activeUsers,
                 users.size() - activeUsers,
-                roleCounts.getOrDefault("ADMIN", 0L),
-                roleCounts.getOrDefault("MANAGER", 0L),
-                roleCounts.getOrDefault("EMPLOYEE", 0L)
+                roleCounts.getOrDefault(UserConstants.ROLE_ADMIN, 0L),
+                roleCounts.getOrDefault(UserConstants.ROLE_MANAGER, 0L),
+                roleCounts.getOrDefault(UserConstants.ROLE_EMPLOYEE, 0L)
         );
     }
 
@@ -302,20 +299,20 @@ public class UserManagementServiceImpl implements UserManagementService {
         if (!canManageUsers(actor)) {
             throw new AccessDeniedException("You do not have permission to create users.");
         }
-        if (isRole(actor, "ADMIN") && !isSupportedAdminRole(requestedRole)) {
+        if (isRole(actor, UserConstants.ROLE_ADMIN) && !isSupportedAdminRole(requestedRole)) {
             throw new AccessDeniedException("Admins can create managers and employees only.");
         }
-        if (isRole(actor, "MANAGER") && !"EMPLOYEE".equalsIgnoreCase(requestedRole)) {
+        if (isRole(actor, UserConstants.ROLE_MANAGER) && !UserConstants.ROLE_EMPLOYEE.equalsIgnoreCase(requestedRole)) {
             throw new AccessDeniedException("Managers can create employees only.");
         }
     }
 
     private String resolveOwnerUsername(UserAccount actor, String roleName, String managerUsername) {
-        if (isRole(actor, "MANAGER")) {
+        if (isRole(actor, UserConstants.ROLE_MANAGER)) {
             return actor.getUsername();
         }
 
-        if (isRole(actor, "ADMIN") && "EMPLOYEE".equalsIgnoreCase(roleName)) {
+        if (isRole(actor, UserConstants.ROLE_ADMIN) && UserConstants.ROLE_EMPLOYEE.equalsIgnoreCase(roleName)) {
             String normalizedManagerUsername = requireTrimmedValue(managerUsername, "Manager is required for employee creation.");
             UserAccount manager = userRepository.findByUserNameIgnoreCase(normalizedManagerUsername)
                     .orElseThrow(() -> new IllegalArgumentException("Selected manager was not found."));
@@ -324,7 +321,7 @@ public class UserManagementServiceImpl implements UserManagementService {
                 throw new IllegalArgumentException("Selected manager must be active.");
             }
 
-            if (!isRole(manager, "MANAGER")) {
+            if (!isRole(manager, UserConstants.ROLE_MANAGER)) {
                 throw new IllegalArgumentException("Selected user must have the manager role.");
             }
 
@@ -335,24 +332,24 @@ public class UserManagementServiceImpl implements UserManagementService {
     }
 
     private void ensureCanAssignRole(UserAccount actor, UserAccount target, String requestedRole) {
-        if (isRole(actor, "ADMIN")
-                && !isRole(target, "ADMIN")
+        if (isRole(actor, UserConstants.ROLE_ADMIN)
+                && !isRole(target, UserConstants.ROLE_ADMIN)
                 && isSupportedAdminRole(requestedRole)) {
             return;
         }
-        if (isRole(actor, "MANAGER")
-                && isManagedEmployee(actor, target)
-                && "EMPLOYEE".equalsIgnoreCase(requestedRole)) {
+        if (isRole(actor, UserConstants.ROLE_MANAGER)
+                && isManagedEmployee(actor, toUserAccountView(target))
+                && UserConstants.ROLE_EMPLOYEE.equalsIgnoreCase(requestedRole)) {
             return;
         }
         throw new AccessDeniedException("You do not have permission to change this user.");
     }
 
     private void ensureManageableTarget(UserAccount actor, UserAccount target) {
-        if (isRole(actor, "ADMIN") && !isRole(target, "ADMIN")) {
+        if (isRole(actor, UserConstants.ROLE_ADMIN) && !isRole(target, UserConstants.ROLE_ADMIN)) {
             return;
         }
-        if (isRole(actor, "MANAGER") && isManagedEmployee(actor, target)) {
+        if (isRole(actor, UserConstants.ROLE_MANAGER) && isManagedEmployee(actor, toUserAccountView(target))) {
             return;
         }
         throw new AccessDeniedException("You do not have permission to manage this user.");
@@ -370,8 +367,11 @@ public class UserManagementServiceImpl implements UserManagementService {
 
     private String generateNextCompanyId() {
         int nextNumber = Math.max(
-                MINIMUM_NEXT_COMPANY_ID,
-                userRepository.findHighestCompanyIdNumber(COMPANY_ID_PREFIX, COMPANY_ID_PREFIX.length() + 1) + 1
+                UserConstants.MINIMUM_NEXT_COMPANY_ID,
+                userRepository.findHighestCompanyIdNumber(
+                        UserConstants.COMPANY_ID_PREFIX,
+                        UserConstants.COMPANY_ID_PREFIX.length() + 1
+                ) + 1
         );
 
         String candidate = formatCompanyId(nextNumber);
@@ -384,7 +384,8 @@ public class UserManagementServiceImpl implements UserManagementService {
     }
 
     private String formatCompanyId(int number) {
-        return COMPANY_ID_PREFIX + String.format(Locale.ROOT, "%0" + COMPANY_ID_NUMBER_WIDTH + "d", number);
+        return UserConstants.COMPANY_ID_PREFIX
+                + String.format(Locale.ROOT, "%0" + UserConstants.COMPANY_ID_NUMBER_WIDTH + "d", number);
     }
 
     private void validateUniqueEmail(Long currentUserId, String email) {
@@ -397,41 +398,18 @@ public class UserManagementServiceImpl implements UserManagementService {
         }
     }
 
-    private void validateOptionalPassword(String password) {
-        if (password == null || password.isBlank()) {
-            return;
-        }
-
-        if (password.length() < ValidationPatterns.PASSWORD_MIN_LENGTH
-                || password.length() > ValidationPatterns.PASSWORD_MAX_LENGTH) {
-            throw new IllegalArgumentException("Password must be between 8 and 255 characters");
-        }
-
-        if (!password.matches(ValidationPatterns.STRICT_PASSWORD_REGEX)) {
-            throw new IllegalArgumentException(ValidationPatterns.STRICT_PASSWORD_MESSAGE);
-        }
-    }
-
     private String decodeRequiredBase64Password(String password) {
-        String encodedPassword = requireTrimmedValue(password, "Password is required");
-        return decodeBase64Password(encodedPassword);
+        return PasswordUtils.decodeBase64(requireTrimmedValue(password, "Password is required"));
     }
 
     private String decodeOptionalBase64Password(String password) {
-        String encodedPassword = normalizeOptionalValue(password);
-        if (encodedPassword == null || encodedPassword.isBlank()) {
-            return encodedPassword;
-        }
-
-        return decodeBase64Password(encodedPassword);
+        String encoded = normalizeOptionalValue(password);
+        return (encoded == null || encoded.isBlank()) ? encoded : PasswordUtils.decodeBase64(encoded);
     }
 
-    private String decodeBase64Password(String encodedPassword) {
-        try {
-            return new String(Base64.getDecoder().decode(encodedPassword), StandardCharsets.UTF_8);
-        } catch (IllegalArgumentException exception) {
-            throw new IllegalArgumentException("Password must be valid Base64.");
-        }
+    private void validateOptionalPassword(String password) {
+        if (password == null || password.isBlank()) return;
+        PasswordUtils.validate(password);
     }
 
     private Role loadRole(String uniqueName) {
@@ -440,26 +418,14 @@ public class UserManagementServiceImpl implements UserManagementService {
     }
 
     private ManagedUserResponse toManagedUserResponse(UserAccount user, UserAccount actor, boolean includePermissions) {
-        return new ManagedUserResponse(
-                user.getId(),
-                user.getCompanyId(),
-                user.getUsername(),
-                user.getFullName(),
-                user.getEmail(),
-                user.getRole(),
-                user.isActive(),
-                user.getGender(),
-                user.getCreatedBy(),
-                user.getUpdatedBy(),
-                user.getCreateDate(),
-                user.getUpdateDate(),
-                user.getLastLogin(),
-                includePermissions && canEdit(actor, user),
-                includePermissions && canDelete(actor, user)
-        );
+        return toManagedUserResponse(toUserAccountView(user), actor, includePermissions);
     }
 
     private ManagedUserResponse toManagedUserResponse(UserAccountView user, UserAccount actor) {
+        return toManagedUserResponse(user, actor, true);
+    }
+
+    private ManagedUserResponse toManagedUserResponse(UserAccountView user, UserAccount actor, boolean includePermissions) {
         return new ManagedUserResponse(
                 user.id(),
                 user.companyId(),
@@ -474,8 +440,8 @@ public class UserManagementServiceImpl implements UserManagementService {
                 user.createDate(),
                 user.updateDate(),
                 user.lastLogin(),
-                canEdit(actor, user),
-                canDelete(actor, user)
+                includePermissions && canEdit(actor, user),
+                includePermissions && canDelete(actor, user)
         );
     }
 
@@ -497,58 +463,30 @@ public class UserManagementServiceImpl implements UserManagementService {
         );
     }
 
-    private boolean canEdit(UserAccount actor, UserAccount user) {
-        if (isRole(actor, "ADMIN")) {
-            return !isRole(user, "ADMIN");
-        }
-        if (isRole(actor, "MANAGER")) {
-            return isManagedEmployee(actor, user);
-        }
-        return false;
-    }
-
     private boolean canEdit(UserAccount actor, UserAccountView user) {
-        if (isRole(actor, "ADMIN")) {
-            return !isRole(user.role(), "ADMIN");
+        if (isRole(actor, UserConstants.ROLE_ADMIN)) {
+            return !isRole(user.role(), UserConstants.ROLE_ADMIN);
         }
-        if (isRole(actor, "MANAGER")) {
+        if (isRole(actor, UserConstants.ROLE_MANAGER)) {
             return isManagedEmployee(actor, user);
         }
         return false;
     }
 
     private boolean isSupportedAdminRole(String roleName) {
-        return "MANAGER".equalsIgnoreCase(roleName) || "EMPLOYEE".equalsIgnoreCase(roleName);
-    }
-
-    private boolean isManagedEmployee(UserAccount actor, UserAccount user) {
-        if (!isRole(user, "EMPLOYEE")) {
-            return false;
-        }
-
-        String createdBy = user.getCreatedBy();
-        if (createdBy == null || createdBy.isBlank()) {
-            return false;
-        }
-
-        return createdBy.trim().equalsIgnoreCase(actor.getUsername());
+        return UserConstants.ROLE_MANAGER.equalsIgnoreCase(roleName)
+                || UserConstants.ROLE_EMPLOYEE.equalsIgnoreCase(roleName);
     }
 
     private boolean isManagedEmployee(UserAccount actor, UserAccountView user) {
-        if (!isRole(user.role(), "EMPLOYEE")) {
+        if (!isRole(user.role(), UserConstants.ROLE_EMPLOYEE)) {
             return false;
         }
-
         String createdBy = user.createdBy();
         if (createdBy == null || createdBy.isBlank()) {
             return false;
         }
-
         return createdBy.trim().equalsIgnoreCase(actor.getUsername());
-    }
-
-    private boolean canDelete(UserAccount actor, UserAccount user) {
-        return canEdit(actor, user) && !Objects.equals(actor.getId(), user.getId());
     }
 
     private boolean canDelete(UserAccount actor, UserAccountView user) {
@@ -565,15 +503,6 @@ public class UserManagementServiceImpl implements UserManagementService {
 
     private String normalizeRoleName(String roleName) {
         return roleName == null ? "" : roleName.trim().toUpperCase(Locale.ROOT);
-    }
-
-    private boolean isSameUser(UserAccount actor, UserAccount user) {
-        if (actor.getId() != null && user.getId() != null) {
-            return actor.getId().equals(user.getId());
-        }
-        return actor.getUsername() != null
-                && user.getUsername() != null
-                && actor.getUsername().equalsIgnoreCase(user.getUsername());
     }
 
     private boolean isSameUser(UserAccount actor, UserAccountView user) {
