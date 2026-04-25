@@ -2,6 +2,7 @@ package com.cresensolutions.userservice.controller;
 
 import com.cresensolutions.userservice.dto.CreateUserRequest;
 import com.cresensolutions.userservice.dto.ManagedUserResponse;
+import com.cresensolutions.userservice.dto.UpdateProfileRequest;
 import com.cresensolutions.userservice.dto.UpdateUserRequest;
 import com.cresensolutions.userservice.dto.UserDashboardResponse;
 import com.cresensolutions.userservice.service.UserManagementService;
@@ -10,6 +11,7 @@ import jakarta.validation.constraints.NotBlank;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -42,6 +44,11 @@ public class UserManagementController {
     @PutMapping("/{userId}")
     public ManagedUserResponse updateUser(@PathVariable Long userId, @Valid @RequestBody UpdateUserRequest request) {
         return userManagementService.updateUser(userId, request);
+    }
+
+    @PatchMapping("/{userId}/profile")
+    public ManagedUserResponse updateProfile(@PathVariable Long userId, @Valid @RequestBody UpdateProfileRequest request) {
+        return userManagementService.updateProfile(userId, request);
     }
 
     @DeleteMapping("/{userId}")

@@ -64,6 +64,17 @@ public class UserAccount {
     @Column(name = "gender")
     private String gender;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "country_id", foreignKey = @ForeignKey(name = "fk_user_country"))
+    private Country country;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "phone_code_id", foreignKey = @ForeignKey(name = "fk_user_phone_code"))
+    private PhoneCode phoneCode;
+
+    @Column(name = "phone_number", length = 30)
+    private String phoneNumber;
+
     public UserAccount() {
     }
 
@@ -219,4 +230,13 @@ public class UserAccount {
     public void setGender(String gender) {
         this.gender = gender;
     }
+
+    public Country getCountry() { return country; }
+    public void setCountry(Country country) { this.country = country; }
+
+    public PhoneCode getPhoneCode() { return phoneCode; }
+    public void setPhoneCode(PhoneCode phoneCode) { this.phoneCode = phoneCode; }
+
+    public String getPhoneNumber() { return phoneNumber; }
+    public void setPhoneNumber(String phoneNumber) { this.phoneNumber = phoneNumber; }
 }

@@ -13,38 +13,46 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    private final MessageSource messageSource;
+
+    public GlobalExceptionHandler(MessageSource messageSource) {
+        this.messageSource = messageSource;
+    }
+
     @ExceptionHandler(AuthenticationFailedException.class)
     public ResponseEntity<ApiErrorResponse> handleAuthenticationFailed(AuthenticationFailedException exception) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body(new ApiErrorResponse(exception.getMessage()));
+                .body(new ApiErrorResponse(translate(exception.getMessage())));
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ApiErrorResponse> handleResourceNotFound(ResourceNotFoundException exception) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(new ApiErrorResponse(exception.getMessage()));
+                .body(new ApiErrorResponse(translate(exception.getMessage())));
     }
 
     @ExceptionHandler(InvalidOtpException.class)
     public ResponseEntity<ApiErrorResponse> handleInvalidOtp(InvalidOtpException exception) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(new ApiErrorResponse(exception.getMessage()));
+                .body(new ApiErrorResponse(translate(exception.getMessage())));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiErrorResponse> handleIllegalArgument(IllegalArgumentException exception) {
         return ResponseEntity.badRequest()
-                .body(new ApiErrorResponse(exception.getMessage()));
+                .body(new ApiErrorResponse(translate(exception.getMessage())));
     }
 
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ApiErrorResponse> handleAccessDenied(AccessDeniedException exception) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(new ApiErrorResponse(exception.getMessage()));
+                .body(new ApiErrorResponse(translate(exception.getMessage())));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -52,10 +60,10 @@ public class GlobalExceptionHandler {
         Map<String, String> errors = new LinkedHashMap<>();
 
         for (FieldError fieldError : exception.getBindingResult().getFieldErrors()) {
-            errors.putIfAbsent(fieldError.getField(), fieldError.getDefaultMessage());
+            errors.putIfAbsent(fieldError.getField(), translate(fieldError.getDefaultMessage()));
         }
 
-        String message = errors.values().stream().findFirst().orElse("Invalid request");
+        String message = errors.values().stream().findFirst().orElse(translate("Invalid request"));
         return ResponseEntity.badRequest().body(new ApiErrorResponse(message, errors));
     }
 
@@ -66,15 +74,24 @@ public class GlobalExceptionHandler {
         exception.getConstraintViolations().forEach(violation -> {
             String path = violation.getPropertyPath() == null ? "request" : violation.getPropertyPath().toString();
             String field = path.contains(".") ? path.substring(path.lastIndexOf('.') + 1) : path;
-            errors.putIfAbsent(field, violation.getMessage());
+            errors.putIfAbsent(field, translate(violation.getMessage()));
         });
 
-        String message = errors.values().stream().findFirst().orElse("Invalid request");
+        String message = errors.values().stream().findFirst().orElse(translate("Invalid request"));
         return ResponseEntity.badRequest().body(new ApiErrorResponse(message, errors));
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiErrorResponse> handleMalformedPayload(HttpMessageNotReadableException exception) {
-        return ResponseEntity.badRequest().body(new ApiErrorResponse("Malformed request payload"));
+        return ResponseEntity.badRequest().body(new ApiErrorResponse(translate("Malformed request payload")));
+    }
+
+    private String translate(String message) {
+        if (message == null) return "Unknown error";
+        try {
+            return messageSource.getMessage(message, null, message, LocaleContextHolder.getLocale());
+        } catch (Exception e) {
+            return message;
+        }
     }
 }

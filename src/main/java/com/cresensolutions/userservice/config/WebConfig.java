@@ -11,6 +11,7 @@ public class WebConfig implements WebMvcConfigurer {
     public void addCorsMappings(CorsRegistry registry) {
         registerLocalAngularCors(registry, "/api/users/**");
         registerLocalAngularCors(registry, "/api/auth/**");
+        registerLocalAngularCors(registry, "/api/countries/**");
     }
 
     private void registerLocalAngularCors(CorsRegistry registry, String pathPattern) {

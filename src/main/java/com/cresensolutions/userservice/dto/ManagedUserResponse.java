@@ -17,6 +17,13 @@ public record ManagedUserResponse(
         Instant updateDate,
         Instant lastLogin,
         boolean canEdit,
-        boolean canDelete
+        boolean canDelete,
+        Long countryId,
+        String countryName,
+        String countryCode,
+        String countryFlagEmoji,
+        Long phoneCodeId,
+        String dialCode,
+        String phoneNumber
 ) {
 }

@@ -10,6 +10,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mail.javamail.JavaMailSender;
 
+import java.io.File;
 import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.anyString;
@@ -37,7 +38,7 @@ class EmailServiceImplTest {
     void setUp() {
         configuredMail = new StubMailProperties("noreply@cresensolutions.com", 10, "", "", "");
         unconfiguredMail = new StubMailProperties("", 10, "", "", "");
-        // Return empty so the impl falls back to its default behaviour in all tests
+
         lenient().when(emailTemplateRepository.findByTemplateTypeAndActiveTrue(anyString()))
                 .thenReturn(Optional.empty());
     }
@@ -180,7 +181,7 @@ class EmailServiceImplTest {
 
         emailService.sendNewUserCreatedEmail(
                 "user@cresensolutions.com", "Bob", 1L, "CRESEN004",
-                "bob", "EMPLOYEE", "  "); // blank link → falls back to mailProperties
+                "bob", "EMPLOYEE", "  ");
 
         verify(mailSender).send(mimeMessage);
     }
@@ -194,7 +195,7 @@ class EmailServiceImplTest {
 
         emailService.sendUserRoleChangedEmail(
                 "user@cresensolutions.com", "Dave", "dave",
-                "EMPLOYEE", "MANAGER", "admin", "ADMIN", "  "); // blank → fallback
+                "EMPLOYEE", "MANAGER", "admin", "ADMIN", "  ");
 
         verify(mailSender).send(mimeMessage);
     }
@@ -232,8 +233,7 @@ class EmailServiceImplTest {
 
     @Test
     void sendPasswordResetOtp_withExistingLogoFile_includesLogoInEmail() throws Exception {
-        // Create a real temp file so logoFile.exists() && logoFile.isFile() returns true
-        java.io.File tempLogo = java.io.File.createTempFile("logo", ".png");
+       File tempLogo = File.createTempFile("logo", ".png");
         tempLogo.deleteOnExit();
 
         MailProperties mailWithRealLogo = new StubMailProperties(

@@ -40,7 +40,14 @@ public record CreateUserRequest(
 
         @NotBlank(message = "Gender is required")
         @Size(max = 50, message = "Gender must not exceed 50 characters")
-        String gender
+        String gender,
+
+        Long countryId,
+
+        Long phoneCodeId,
+
+        @Size(max = 30, message = "Phone number must not exceed 30 characters")
+        String phoneNumber
 ) {
 
     public CreateUserRequest {
@@ -52,5 +59,6 @@ public record CreateUserRequest(
         role = role == null ? null : role.trim().toUpperCase();
         managerUsername = managerUsername == null ? null : managerUsername.trim();
         gender = gender == null ? null : gender.trim();
+        phoneNumber = phoneNumber == null ? null : phoneNumber.trim();
     }
 }

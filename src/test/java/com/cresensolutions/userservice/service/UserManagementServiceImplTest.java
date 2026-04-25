@@ -2,8 +2,11 @@ package com.cresensolutions.userservice.service;
 
 import com.cresensolutions.userservice.dto.*;
 import com.cresensolutions.userservice.exception.ResourceNotFoundException;
+import com.cresensolutions.userservice.dto.UpdateProfileRequest;
 import com.cresensolutions.userservice.model.Role;
 import com.cresensolutions.userservice.model.UserAccount;
+import com.cresensolutions.userservice.repository.CountryRepository;
+import com.cresensolutions.userservice.repository.PhoneCodeRepository;
 import com.cresensolutions.userservice.repository.RoleRepository;
 import com.cresensolutions.userservice.repository.UserRepository;
 import com.cresensolutions.userservice.service.Impl.UserManagementServiceImpl;
@@ -33,6 +36,8 @@ class UserManagementServiceImplTest {
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private EmailService emailService;
     @Mock private MailProperties mailProperties;
+    @Mock private CountryRepository countryRepository;
+    @Mock private PhoneCodeRepository phoneCodeRepository;
  private final Executor syncExecutor = Runnable::run;
 
     private UserManagementServiceImpl service;
@@ -47,7 +52,7 @@ class UserManagementServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new UserManagementServiceImpl(
-                userRepository, roleRepository, passwordEncoder,
+                userRepository, roleRepository, countryRepository, phoneCodeRepository, passwordEncoder,
                 emailService, mailProperties, syncExecutor);
 
         adminRole    = new Role(1L, "ADMIN",    "ADMIN");
@@ -70,7 +75,7 @@ class UserManagementServiceImplTest {
 
         assertThat(dashboard.users()).hasSize(3);
         assertThat(dashboard.canManageUsers()).isTrue();
-        assertThat(dashboard.assignableRoles()).containsExactly("MANAGER", "EMPLOYEE");
+        assertThat(dashboard.assignableRoles()).containsExactly("ADMIN", "MANAGER", "EMPLOYEE");
     }
 
     @Test
@@ -135,7 +140,7 @@ class UserManagementServiceImplTest {
         CreateUserRequest req = new CreateUserRequest(
                 "admin", null, "New Manager", "newmgr",
                 "newmgr@cresensolutions.com", base64("Secret1!"), "MANAGER",
-                null, true, "Male");
+                null, true, "Male", null, null, null);
 
         ManagedUserResponse response = service.createUser(req);
 
@@ -160,7 +165,7 @@ class UserManagementServiceImplTest {
         CreateUserRequest req = new CreateUserRequest(
                 "admin", null, "New Emp", "newemp",
                 "newemp@cresensolutions.com", base64("Secret1!"), "EMPLOYEE",
-                "manager", true, "Female");
+                "manager", true, "Female", null, null, null);
 
         ManagedUserResponse response = service.createUser(req);
 
@@ -180,7 +185,7 @@ class UserManagementServiceImplTest {
         CreateUserRequest req = new CreateUserRequest(
                 "admin", null, "New Emp", "newemp",
                 "newemp@cresensolutions.com", base64("Secret1!"), "EMPLOYEE",
-                null, true, "Female");
+                null, true, "Female", null, null, null);
 
         assertThatThrownBy(() -> service.createUser(req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -203,7 +208,7 @@ class UserManagementServiceImplTest {
         CreateUserRequest req = new CreateUserRequest(
                 "manager", null, "New Emp", "newemp",
                 "newemp@cresensolutions.com", base64("Secret1!"), "EMPLOYEE",
-                null, true, "Male");
+                null, true, "Male", null, null, null);
 
         ManagedUserResponse response = service.createUser(req);
 
@@ -218,7 +223,7 @@ class UserManagementServiceImplTest {
         CreateUserRequest req = new CreateUserRequest(
                 "manager", null, "Another Mgr", "anothermgr",
                 "anothermgr@cresensolutions.com", base64("Secret1!"), "MANAGER",
-                null, true, "Male");
+                null, true, "Male", null, null, null);
 
         assertThatThrownBy(() -> service.createUser(req))
                 .isInstanceOf(AccessDeniedException.class);
@@ -232,7 +237,7 @@ class UserManagementServiceImplTest {
         CreateUserRequest req = new CreateUserRequest(
                 "emp", null, "Someone", "someone",
                 "someone@cresensolutions.com", base64("Secret1!"), "EMPLOYEE",
-                null, true, "Male");
+                null, true, "Male", null, null, null);
 
         assertThatThrownBy(() -> service.createUser(req))
                 .isInstanceOf(AccessDeniedException.class);
@@ -247,7 +252,7 @@ class UserManagementServiceImplTest {
         CreateUserRequest req = new CreateUserRequest(
                 "admin", null, "Dup", "admin",
                 "dup@cresensolutions.com", base64("Secret1!"), "MANAGER",
-                null, true, "Male");
+                null, true, "Male", null, null, null);
 
         assertThatThrownBy(() -> service.createUser(req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -264,7 +269,7 @@ class UserManagementServiceImplTest {
         CreateUserRequest req = new CreateUserRequest(
                 "admin", null, "Dup", "newmgr",
                 "admin@cresensolutions.com", base64("Secret1!"), "MANAGER",
-                null, true, "Male");
+                null, true, "Male", null, null, null);
 
         assertThatThrownBy(() -> service.createUser(req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -279,7 +284,7 @@ class UserManagementServiceImplTest {
         CreateUserRequest req = new CreateUserRequest(
                 "admin", null, "New", "newuser",
                 "new@cresensolutions.com", "not-base64!!!", "MANAGER",
-                null, true, "Male");
+                null, true, "Male", null, null, null);
 
         assertThatThrownBy(() -> service.createUser(req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -300,7 +305,7 @@ class UserManagementServiceImplTest {
 
         UpdateUserRequest req = new UpdateUserRequest(
                 "admin", null, "Emp Two", "emp2",
-                "emp2@cresensolutions.com", null, "EMPLOYEE", true, "Male");
+                "emp2@cresensolutions.com", null, "EMPLOYEE", true, "Male", null, null, null);
 
         ManagedUserResponse response = service.updateUser(10L, req);
 
@@ -322,7 +327,7 @@ class UserManagementServiceImplTest {
 
         UpdateUserRequest req = new UpdateUserRequest(
                 "admin", null, "Emp Two", "emp2",
-                "emp2@cresensolutions.com", null, "MANAGER", true, "Male");
+                "emp2@cresensolutions.com", null, "MANAGER", true, "Male", null, null, null);
 
         service.updateUser(10L, req);
 
@@ -339,7 +344,7 @@ class UserManagementServiceImplTest {
 
         UpdateUserRequest req = new UpdateUserRequest(
                 "admin", null, "X", "x", "x@cresensolutions.com",
-                null, "EMPLOYEE", true, "Male");
+                null, "EMPLOYEE", true, "Male", null, null, null);
 
         assertThatThrownBy(() -> service.updateUser(99L, req))
                 .isInstanceOf(ResourceNotFoundException.class);
@@ -356,7 +361,7 @@ class UserManagementServiceImplTest {
 
         UpdateUserRequest req = new UpdateUserRequest(
                 "manager", null, "Emp Two", "emp2",
-                "emp2@cresensolutions.com", null, "EMPLOYEE", true, "Male");
+                "emp2@cresensolutions.com", null, "EMPLOYEE", true, "Male", null, null, null);
 
         assertThatThrownBy(() -> service.updateUser(10L, req))
                 .isInstanceOf(AccessDeniedException.class);
@@ -377,7 +382,7 @@ class UserManagementServiceImplTest {
 
         UpdateUserRequest req = new UpdateUserRequest(
                 "admin", null, "Emp Two", "emp2",
-                "emp2@cresensolutions.com", base64("NewPass1!"), "EMPLOYEE", true, "Male");
+                "emp2@cresensolutions.com", base64("NewPass1!"), "EMPLOYEE", true, "Male", null, null, null);
 
         service.updateUser(10L, req);
 
@@ -410,7 +415,7 @@ class UserManagementServiceImplTest {
         when(userRepository.findDetailedById(1L)).thenReturn(Optional.of(selfTarget));
 
         assertThatThrownBy(() -> service.deleteUser(1L, "admin"))
-                .isInstanceOf(AccessDeniedException.class);
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
@@ -465,7 +470,7 @@ class UserManagementServiceImplTest {
         CreateUserRequest req = new CreateUserRequest(
                 "admin", null, "New Emp", "newemp",
                 "newemp@cresensolutions.com", base64("Secret1!"), "EMPLOYEE",
-                "manager", true, "Female");
+                "manager", true, "Female", null, null, null);
 
         assertThatThrownBy(() -> service.createUser(req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -486,7 +491,7 @@ class UserManagementServiceImplTest {
         CreateUserRequest req = new CreateUserRequest(
                 "admin", null, "New Emp", "newemp",
                 "newemp@cresensolutions.com", base64("Secret1!"), "EMPLOYEE",
-                "emp", true, "Female");
+                "emp", true, "Female", null, null, null);
 
         assertThatThrownBy(() -> service.createUser(req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -507,7 +512,7 @@ class UserManagementServiceImplTest {
         CreateUserRequest req = new CreateUserRequest(
                 "admin", null, "New Emp", "newemp",
                 "newemp@cresensolutions.com", base64("Secret1!"), "EMPLOYEE",
-                "ghost", true, "Female");
+                "ghost", true, "Female", null, null, null);
 
         assertThatThrownBy(() -> service.createUser(req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -531,7 +536,7 @@ class UserManagementServiceImplTest {
         CreateUserRequest req = new CreateUserRequest(
                 "admin", null, "New Manager", "newmgr",
                 "newmgr@cresensolutions.com", base64("Secret1!"), "MANAGER",
-                null, true, "Male");
+                null, true, "Male", null, null, null);
 
         ManagedUserResponse response = service.createUser(req);
 
@@ -548,7 +553,7 @@ class UserManagementServiceImplTest {
         CreateUserRequest req = new CreateUserRequest(
                 "admin", null, "New Manager", "newmgr",
                 "newmgr@cresensolutions.com", base64("weakpass"), "MANAGER",
-                null, true, "Male");
+                null, true, "Male", null, null, null);
 
         assertThatThrownBy(() -> service.createUser(req))
                 .isInstanceOf(IllegalArgumentException.class);
@@ -564,7 +569,7 @@ class UserManagementServiceImplTest {
         CreateUserRequest req = new CreateUserRequest(
                 "admin", null, "New Manager", "newmgr",
                 "newmgr@cresensolutions.com", base64("Ab1!"), "MANAGER",
-                null, true, "Male");
+                null, true, "Male", null, null, null);
 
         assertThatThrownBy(() -> service.createUser(req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -578,7 +583,7 @@ class UserManagementServiceImplTest {
 
         UpdateUserRequest req = new UpdateUserRequest(
                 "admin", null, "Emp Two", "emp2",
-                "emp2@cresensolutions.com", "not-base64!!!", "EMPLOYEE", true, "Male");
+                "emp2@cresensolutions.com", "not-base64!!!", "EMPLOYEE", true, "Male", null, null, null);
 
         assertThatThrownBy(() -> service.updateUser(10L, req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -629,7 +634,7 @@ class UserManagementServiceImplTest {
 
         UpdateUserRequest req = new UpdateUserRequest(
                 "admin", null, "Emp Two", "emp2",
-                "emp2@cresensolutions.com", base64("weakpass"), "EMPLOYEE", true, "Male");
+                "emp2@cresensolutions.com", base64("weakpass"), "EMPLOYEE", true, "Male", null, null, null);
 
         assertThatThrownBy(() -> service.updateUser(10L, req))
                 .isInstanceOf(IllegalArgumentException.class);
@@ -646,7 +651,7 @@ class UserManagementServiceImplTest {
 
         UpdateUserRequest req = new UpdateUserRequest(
                 "admin", null, "Emp Two", "emp2",
-                "emp2@cresensolutions.com", base64("Ab1!"), "EMPLOYEE", true, "Male");
+                "emp2@cresensolutions.com", base64("Ab1!"), "EMPLOYEE", true, "Male", null, null, null);
 
         assertThatThrownBy(() -> service.updateUser(10L, req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -663,7 +668,7 @@ class UserManagementServiceImplTest {
 
         UpdateUserRequest req = new UpdateUserRequest(
                 "emp", null, "Emp Two", "emp2",
-                "emp2@cresensolutions.com", null, "EMPLOYEE", true, "Male");
+                "emp2@cresensolutions.com", null, "EMPLOYEE", true, "Male", null, null, null);
 
         assertThatThrownBy(() -> service.updateUser(10L, req))
                 .isInstanceOf(AccessDeniedException.class);
@@ -682,18 +687,25 @@ class UserManagementServiceImplTest {
     }
 
     @Test
-    void createUser_adminCreatesAdminRole_throwsAccessDeniedException() {
+    void createUser_adminCreatesAdminRole_succeeds() {
         when(userRepository.findByUserNameIgnoreCaseOrEmailIdIgnoreCase("admin", "admin"))
                 .thenReturn(Optional.of(adminActor));
+        when(userRepository.existsByUserNameIgnoreCase("admin2")).thenReturn(false);
+        when(userRepository.existsByEmailIdIgnoreCase("admin2@cresensolutions.com")).thenReturn(false);
+        when(roleRepository.findByUniqueNameIgnoreCase("ADMIN")).thenReturn(Optional.of(adminRole));
+        when(userRepository.findHighestCompanyIdNumber(anyString(), anyInt())).thenReturn(3);
+        when(userRepository.existsByCompanyIdIgnoreCase(anyString())).thenReturn(false);
+        when(passwordEncoder.encode(anyString())).thenReturn("$2a$10$hash");
+        when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         CreateUserRequest req = new CreateUserRequest(
                 "admin", null, "Another Admin", "admin2",
                 "admin2@cresensolutions.com", base64("Secret1!"), "ADMIN",
-                null, true, "Male");
+                null, true, "Male", null, null, null);
 
-        assertThatThrownBy(() -> service.createUser(req))
-                .isInstanceOf(AccessDeniedException.class)
-                .hasMessageContaining("Admins can create managers and employees only");
+        ManagedUserResponse response = service.createUser(req);
+        assertThat(response.username()).isEqualTo("admin2");
+        assertThat(response.role()).isEqualTo("ADMIN");
     }
 
     @Test
@@ -708,7 +720,7 @@ class UserManagementServiceImplTest {
 
         UpdateUserRequest req = new UpdateUserRequest(
                 "admin", null, "Emp Two", "taken",
-                "emp2@cresensolutions.com", null, "EMPLOYEE", true, "Male");
+                "emp2@cresensolutions.com", null, "EMPLOYEE", true, "Male", null, null, null);
 
         assertThatThrownBy(() -> service.updateUser(10L, req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -728,7 +740,7 @@ class UserManagementServiceImplTest {
 
         UpdateUserRequest req = new UpdateUserRequest(
                 "admin", null, "Emp Two", "emp2",
-                "taken@cresensolutions.com", null, "EMPLOYEE", true, "Male");
+                "taken@cresensolutions.com", null, "EMPLOYEE", true, "Male", null, null, null);
 
         assertThatThrownBy(() -> service.updateUser(10L, req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -745,7 +757,7 @@ class UserManagementServiceImplTest {
 
         UserDashboardResponse dashboard = service.getDashboard("admin");
 
-        assertThat(dashboard.assignableRoles()).containsExactly("MANAGER", "EMPLOYEE");
+        assertThat(dashboard.assignableRoles()).containsExactly("ADMIN", "MANAGER", "EMPLOYEE");
         assertThat(dashboard.canManageUsers()).isTrue();
     }
 
@@ -758,7 +770,7 @@ class UserManagementServiceImplTest {
         CreateUserRequest req = new CreateUserRequest(
                 "emp", null, "New", "newuser",
                 "new@cresensolutions.com", base64("Secret1!"), "EMPLOYEE",
-                null, true, "Male");
+                null, true, "Male", null, null, null);
 
         assertThatThrownBy(() -> service.createUser(req))
                 .isInstanceOf(AccessDeniedException.class)
@@ -781,7 +793,7 @@ class UserManagementServiceImplTest {
         CreateUserRequest req = new CreateUserRequest(
                 "manager", null, "New Emp", "newemp",
                 "newemp@cresensolutions.com", base64("Secret1!"), "EMPLOYEE",
-                null, true, "Male");
+                null, true, "Male", null, null, null);
 
         ManagedUserResponse response = service.createUser(req);
 
@@ -803,7 +815,7 @@ class UserManagementServiceImplTest {
 
         UpdateUserRequest req = new UpdateUserRequest(
                 "admin", null, "Emp Two", "emp2",
-                "emp2@cresensolutions.com", base64("NewPass1!"), "EMPLOYEE", true, "Male");
+                "emp2@cresensolutions.com", base64("NewPass1!"), "EMPLOYEE", true, "Male", null, null, null);
 
         service.updateUser(10L, req);
 
@@ -824,7 +836,7 @@ class UserManagementServiceImplTest {
 
         UpdateUserRequest req = new UpdateUserRequest(
                 "manager", null, "Emp Two", "emp2",
-                "emp2@cresensolutions.com", null, "EMPLOYEE", true, "Male");
+                "emp2@cresensolutions.com", null, "EMPLOYEE", true, "Male", null, null, null);
 
         ManagedUserResponse response = service.updateUser(10L, req);
 
@@ -930,7 +942,7 @@ class UserManagementServiceImplTest {
 
         UpdateUserRequest req = new UpdateUserRequest(
                 "admin", null, "Emp Two", "emp2",
-                "emp2@cresensolutions.com", null, "EMPLOYEE", true, "Male");
+                "emp2@cresensolutions.com", null, "EMPLOYEE", true, "Male", null, null, null);
 
         ManagedUserResponse response = service.updateUser(10L, req);
 
@@ -955,7 +967,7 @@ class UserManagementServiceImplTest {
         CreateUserRequest req = new CreateUserRequest(
                 "admin", null, "New Emp3", "newemp3",
                 "newemp3@cresensolutions.com", base64("Secret1!"), "EMPLOYEE",
-                "manager", true, "Male");
+                "manager", true, "Male", null, null, null);
 
         ManagedUserResponse response = service.createUser(req);
         assertThat(response.canEdit()).isTrue();
@@ -975,26 +987,29 @@ class UserManagementServiceImplTest {
 
         UpdateUserRequest req = new UpdateUserRequest(
                 "admin", null, "Emp Two", "emp2",
-                "emp2@cresensolutions.com", null, "EMPLOYEE", true, "Male");
+                "emp2@cresensolutions.com", null, "EMPLOYEE", true, "Male", null, null, null);
 
         ManagedUserResponse response = service.updateUser(10L, req);
         assertThat(response.canEdit()).isTrue();
     }
 
     @Test
-    void updateUser_adminUpdatesAdminTarget_responseHasCanEditFalse() {
+    void updateUser_adminUpdatesAdminTarget_succeeds() {
         UserAccount adminTarget = buildUser(10L, "admin2", "admin2@cresensolutions.com", adminRole, true);
 
         when(userRepository.findByUserNameIgnoreCaseOrEmailIdIgnoreCase("admin", "admin"))
                 .thenReturn(Optional.of(adminActor));
         when(userRepository.findDetailedById(10L)).thenReturn(Optional.of(adminTarget));
+        when(userRepository.existsByUserNameIgnoreCaseAndIdNot("admin2", 10L)).thenReturn(false);
+        when(userRepository.existsByEmailIdIgnoreCaseAndIdNot("admin2@cresensolutions.com", 10L)).thenReturn(false);
+        when(roleRepository.findByUniqueNameIgnoreCase("ADMIN")).thenReturn(Optional.of(adminRole));
 
         UpdateUserRequest req = new UpdateUserRequest(
                 "admin", null, "Admin Two", "admin2",
-                "admin2@cresensolutions.com", null, "ADMIN", true, "Male");
+                "admin2@cresensolutions.com", null, "ADMIN", true, "Male", null, null, null);
 
-        assertThatThrownBy(() -> service.updateUser(10L, req))
-                .isInstanceOf(AccessDeniedException.class);
+        ManagedUserResponse response = service.updateUser(10L, req);
+        assertThat(response.canEdit()).isTrue();
     }
 
     @Test
@@ -1023,7 +1038,7 @@ class UserManagementServiceImplTest {
 
         UpdateUserRequest req = new UpdateUserRequest(
                 "manager", null, "Mgr Two", "mgr2",
-                "mgr2@cresensolutions.com", null, "MANAGER", true, "Male");
+                "mgr2@cresensolutions.com", null, "MANAGER", true, "Male", null, null, null);
 
         assertThatThrownBy(() -> service.updateUser(10L, req))
                 .isInstanceOf(AccessDeniedException.class);
@@ -1135,7 +1150,7 @@ class UserManagementServiceImplTest {
 
         UpdateUserRequest req = new UpdateUserRequest(
                 "admin", null, "Emp Two", "emp2",
-                "emp2@cresensolutions.com", null, "EMPLOYEE", true, "Male");
+                "emp2@cresensolutions.com", null, "EMPLOYEE", true, "Male", null, null, null);
 
         ManagedUserResponse response = service.updateUser(10L, req);
 
@@ -1152,7 +1167,7 @@ class UserManagementServiceImplTest {
         CreateUserRequest req = new CreateUserRequest(
                 "admin", null, "   ", "newuser",
                 "new@cresensolutions.com", base64("Secret1!"), "MANAGER",
-                null, true, "Male");
+                null, true, "Male", null, null, null);
 
         assertThatThrownBy(() -> service.createUser(req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -1174,7 +1189,7 @@ class UserManagementServiceImplTest {
 
         UpdateUserRequest req = new UpdateUserRequest(
                 "admin", null, "Emp Two", "emp2",
-                "emp2@cresensolutions.com", null, "EMPLOYEE", true, "Male");
+                "emp2@cresensolutions.com", null, "EMPLOYEE", true, "Male", null, null, null);
 
         service.updateUser(10L, req);
 
@@ -1216,8 +1231,8 @@ class UserManagementServiceImplTest {
         ManagedUserResponse admin2Entry = dashboard.users().stream()
                 .filter(u -> u.username().equals("admin2"))
                 .findFirst().orElseThrow();
-        assertThat(admin2Entry.canEdit()).isFalse();
-        assertThat(admin2Entry.canDelete()).isFalse();
+        assertThat(admin2Entry.canEdit()).isTrue();
+        assertThat(admin2Entry.canDelete()).isTrue();
     }
 
     @Test
@@ -1242,11 +1257,102 @@ class UserManagementServiceImplTest {
 
         UpdateUserRequest req = new UpdateUserRequest(
                 "manager", null, "Mgr Two", "mgr2",
-                "mgr2@cresensolutions.com", null, "MANAGER", true, "Male");
+                "mgr2@cresensolutions.com", null, "MANAGER", true, "Male", null, null, null);
 
         assertThatThrownBy(() -> service.updateUser(10L, req))
                 .isInstanceOf(AccessDeniedException.class);
     }
+
+    @Test
+    void updateProfile_ownProfile_succeeds() {
+        when(userRepository.findByUserNameIgnoreCaseOrEmailIdIgnoreCase("emp", "emp"))
+                .thenReturn(Optional.of(employeeActor));
+        when(userRepository.findDetailedById(3L)).thenReturn(Optional.of(employeeActor));
+
+        UpdateProfileRequest req = new UpdateProfileRequest("emp", "Updated Name", "Female");
+        ManagedUserResponse response = service.updateProfile(3L, req);
+
+        assertThat(response.username()).isEqualTo("emp");
+        assertThat(response.fullName()).isEqualTo("Updated Name");
+    }
+
+    @Test
+    void updateProfile_differentUser_throwsAccessDeniedException() {
+        UserAccount otherUser = buildUser(10L, "other", "other@cresensolutions.com", employeeRole, true);
+
+        when(userRepository.findByUserNameIgnoreCaseOrEmailIdIgnoreCase("emp", "emp"))
+                .thenReturn(Optional.of(employeeActor));
+        when(userRepository.findDetailedById(10L)).thenReturn(Optional.of(otherUser));
+
+        UpdateProfileRequest req = new UpdateProfileRequest("emp", "Updated Name", "Male");
+
+        assertThatThrownBy(() -> service.updateProfile(10L, req))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class)
+                .hasMessageContaining("own profile");
+    }
+
+    @Test
+    void updateProfile_userNotFound_throwsResourceNotFoundException() {
+        when(userRepository.findByUserNameIgnoreCaseOrEmailIdIgnoreCase("emp", "emp"))
+                .thenReturn(Optional.of(employeeActor));
+        when(userRepository.findDetailedById(99L)).thenReturn(Optional.empty());
+
+        UpdateProfileRequest req = new UpdateProfileRequest("emp", "Updated Name", "Male");
+
+        assertThatThrownBy(() -> service.updateProfile(99L, req))
+                .isInstanceOf(com.cresensolutions.userservice.exception.ResourceNotFoundException.class);
+    }
+
+    @Test
+    void updateProfile_inactiveActor_throwsAccessDeniedException() {
+        employeeActor.setActive(false);
+        when(userRepository.findByUserNameIgnoreCaseOrEmailIdIgnoreCase("emp", "emp"))
+                .thenReturn(Optional.of(employeeActor));
+
+        UpdateProfileRequest req = new UpdateProfileRequest("emp", "Updated Name", "Male");
+
+        assertThatThrownBy(() -> service.updateProfile(3L, req))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+    }
+
+    @Test
+    void updateProfile_blankFullName_throwsIllegalArgumentException() {
+        when(userRepository.findByUserNameIgnoreCaseOrEmailIdIgnoreCase("emp", "emp"))
+                .thenReturn(Optional.of(employeeActor));
+        when(userRepository.findDetailedById(3L)).thenReturn(Optional.of(employeeActor));
+
+        UpdateProfileRequest req = new UpdateProfileRequest("emp", "   ", "Male");
+
+        assertThatThrownBy(() -> service.updateProfile(3L, req))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Full name is required");
+    }
+
+    @Test
+    void updateProfile_blankGender_throwsIllegalArgumentException() {
+        when(userRepository.findByUserNameIgnoreCaseOrEmailIdIgnoreCase("emp", "emp"))
+                .thenReturn(Optional.of(employeeActor));
+        when(userRepository.findDetailedById(3L)).thenReturn(Optional.of(employeeActor));
+
+        UpdateProfileRequest req = new UpdateProfileRequest("emp", "Valid Name", "   ");
+
+        assertThatThrownBy(() -> service.updateProfile(3L, req))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Gender is required");
+    }
+
+    @Test
+    void updateProfile_adminUpdatesOwnProfile_succeeds() {
+        when(userRepository.findByUserNameIgnoreCaseOrEmailIdIgnoreCase("admin", "admin"))
+                .thenReturn(Optional.of(adminActor));
+        when(userRepository.findDetailedById(1L)).thenReturn(Optional.of(adminActor));
+
+        UpdateProfileRequest req = new UpdateProfileRequest("admin", "Admin Updated", "Male");
+        ManagedUserResponse response = service.updateProfile(1L, req);
+
+        assertThat(response.username()).isEqualTo("admin");
+    }
+
     @Test
     void deleteUser_managerDeletesEmployeeWithNullCreatedBy_throwsAccessDeniedException() {
         UserAccount target = buildUser(10L, "emp2", "emp2@cresensolutions.com", employeeRole, true);
@@ -1356,7 +1462,7 @@ class UserManagementServiceImplTest {
         String blankBase64 = Base64.getEncoder().encodeToString("   ".getBytes());
         UpdateUserRequest req = new UpdateUserRequest(
                 "admin", null, "Emp Two", "emp2",
-                "emp2@cresensolutions.com", blankBase64, "EMPLOYEE", true, "Male");
+                "emp2@cresensolutions.com", blankBase64, "EMPLOYEE", true, "Male", null, null, null);
 
         service.updateUser(10L, req);
 
@@ -1379,7 +1485,7 @@ class UserManagementServiceImplTest {
         CreateUserRequest req = new CreateUserRequest(
                 "admin", null, "New Mgr2", "newmgr2",
                 "newmgr2@cresensolutions.com", base64("Secret1!"), "MANAGER",
-                null, true, "Male");
+                null, true, "Male", null, null, null);
 
         ManagedUserResponse response = service.createUser(req);
         assertThat(response.createdBy()).isEqualTo("admin");
@@ -1393,7 +1499,7 @@ class UserManagementServiceImplTest {
         CreateUserRequest req = new CreateUserRequest(
                 "admin", null, null, "newuser",
                 "new@cresensolutions.com", base64("Secret1!"), "MANAGER",
-                null, true, "Male");
+                null, true, "Male", null, null, null);
 
         assertThatThrownBy(() -> service.createUser(req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -1411,7 +1517,7 @@ class UserManagementServiceImplTest {
         String longPass = "Aa1!" + "x".repeat(260);
         UpdateUserRequest req = new UpdateUserRequest(
                 "admin", null, "Emp Two", "emp2",
-                "emp2@cresensolutions.com", base64(longPass), "EMPLOYEE", true, "Male");
+                "emp2@cresensolutions.com", base64(longPass), "EMPLOYEE", true, "Male", null, null, null);
 
         assertThatThrownBy(() -> service.updateUser(10L, req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -1458,7 +1564,7 @@ class UserManagementServiceImplTest {
             service.createUser(new CreateUserRequest(
                     "admin", null, "New Mgr3", "newmgr3",
                     "newmgr3@cresensolutions.com", base64("Secret1!"), "MANAGER",
-                    null, true, "Male"));
+                    null, true, "Male", null, null, null));
             org.springframework.transaction.support.TransactionSynchronizationManager
                     .getSynchronizations()
                     .forEach(s -> s.afterCommit());
@@ -1482,7 +1588,7 @@ class UserManagementServiceImplTest {
 
         UpdateUserRequest req = new UpdateUserRequest(
                 "manager", null, "Emp Two", "emp2",
-                "emp2@cresensolutions.com", null, "EMPLOYEE", true, "Male");
+                "emp2@cresensolutions.com", null, "EMPLOYEE", true, "Male", null, null, null);
 
         ManagedUserResponse response = service.updateUser(10L, req);
 

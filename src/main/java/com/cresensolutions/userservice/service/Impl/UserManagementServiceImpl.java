@@ -2,11 +2,16 @@ package com.cresensolutions.userservice.service.Impl;
 
 import com.cresensolutions.userservice.dto.CreateUserRequest;
 import com.cresensolutions.userservice.dto.ManagedUserResponse;
+import com.cresensolutions.userservice.dto.UpdateProfileRequest;
 import com.cresensolutions.userservice.dto.UpdateUserRequest;
 import com.cresensolutions.userservice.dto.UserDashboardResponse;
 import com.cresensolutions.userservice.exception.ResourceNotFoundException;
+import com.cresensolutions.userservice.model.Country;
+import com.cresensolutions.userservice.model.PhoneCode;
 import com.cresensolutions.userservice.model.Role;
 import com.cresensolutions.userservice.model.UserAccount;
+import com.cresensolutions.userservice.repository.CountryRepository;
+import com.cresensolutions.userservice.repository.PhoneCodeRepository;
 import com.cresensolutions.userservice.repository.RoleRepository;
 import com.cresensolutions.userservice.repository.UserRepository;
 import com.cresensolutions.userservice.common.UserConstants;
@@ -39,6 +44,8 @@ public class UserManagementServiceImpl implements UserManagementService {
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
+    private final CountryRepository countryRepository;
+    private final PhoneCodeRepository phoneCodeRepository;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
     private final MailProperties mailProperties;
@@ -47,6 +54,8 @@ public class UserManagementServiceImpl implements UserManagementService {
     public UserManagementServiceImpl(
             UserRepository userRepository,
             RoleRepository roleRepository,
+            CountryRepository countryRepository,
+            PhoneCodeRepository phoneCodeRepository,
             PasswordEncoder passwordEncoder,
             EmailService emailService,
             MailProperties mailProperties,
@@ -54,6 +63,8 @@ public class UserManagementServiceImpl implements UserManagementService {
     ) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
+        this.countryRepository = countryRepository;
+        this.phoneCodeRepository = phoneCodeRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailService = emailService;
         this.mailProperties = mailProperties;
@@ -123,6 +134,14 @@ public class UserManagementServiceImpl implements UserManagementService {
         user.setCreatedBy(resolveOwnerUsername(actor, roleName, managerUsername));
         user.setUpdatedBy(actor.getUsername());
 
+        if (request.countryId() != null) {
+            user.setCountry(countryRepository.findById(request.countryId()).orElse(null));
+        }
+        if (request.phoneCodeId() != null) {
+            user.setPhoneCode(phoneCodeRepository.findById(request.phoneCodeId()).orElse(null));
+        }
+        user.setPhoneNumber(request.phoneNumber());
+
         UserAccount savedUser = userRepository.save(user);
         log.info("User {} created by {} with role {}", savedUser.getUsername(), actor.getUsername(), savedUser.getRole());
         runAfterCommit(() -> emailService.sendNewUserCreatedEmail(
@@ -168,6 +187,18 @@ public class UserManagementServiceImpl implements UserManagementService {
         target.setUpdateDate(Instant.now());
         target.setUpdatedBy(actor.getUsername());
 
+        if (request.countryId() != null) {
+            target.setCountry(countryRepository.findById(request.countryId()).orElse(null));
+        } else {
+            target.setCountry(null);
+        }
+        if (request.phoneCodeId() != null) {
+            target.setPhoneCode(phoneCodeRepository.findById(request.phoneCodeId()).orElse(null));
+        } else {
+            target.setPhoneCode(null);
+        }
+        target.setPhoneNumber(request.phoneNumber());
+
         if (password != null && !password.isBlank()) {
             target.setPassword(passwordEncoder.encode(password));
         }
@@ -187,6 +218,26 @@ public class UserManagementServiceImpl implements UserManagementService {
             ));
         }
         return toManagedUserResponse(updatedUser, actor, true);
+    }
+
+    @Override
+    @Transactional
+    public ManagedUserResponse updateProfile(Long userId, UpdateProfileRequest request) {
+        UserAccount actor = loadActiveActor(request.actorUsername());
+        UserAccount target = userRepository.findDetailedById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
+
+        if (!isSameUser(actor, toUserAccountView(target))) {
+            throw new AccessDeniedException("You can only update your own profile.");
+        }
+
+        target.setFullName(requireTrimmedValue(request.fullName(), "Full name is required"));
+        target.setGender(requireTrimmedValue(request.gender(), "Gender is required"));
+        target.setUpdateDate(Instant.now());
+        target.setUpdatedBy(actor.getUsername());
+
+        log.info("Profile updated for user {} by themselves", target.getUsername());
+        return toManagedUserResponse(target, actor, false);
     }
 
     @Override
@@ -252,7 +303,7 @@ public class UserManagementServiceImpl implements UserManagementService {
 
     private List<String> assignableRolesFor(UserAccount actor) {
         if (isRole(actor, UserConstants.ROLE_ADMIN)) {
-            return List.of(UserConstants.ROLE_MANAGER, UserConstants.ROLE_EMPLOYEE);
+            return List.of(UserConstants.ROLE_ADMIN, UserConstants.ROLE_MANAGER, UserConstants.ROLE_EMPLOYEE);
         }
         if (isRole(actor, UserConstants.ROLE_MANAGER)) {
             return List.of(UserConstants.ROLE_EMPLOYEE);
@@ -333,7 +384,6 @@ public class UserManagementServiceImpl implements UserManagementService {
 
     private void ensureCanAssignRole(UserAccount actor, UserAccount target, String requestedRole) {
         if (isRole(actor, UserConstants.ROLE_ADMIN)
-                && !isRole(target, UserConstants.ROLE_ADMIN)
                 && isSupportedAdminRole(requestedRole)) {
             return;
         }
@@ -346,7 +396,7 @@ public class UserManagementServiceImpl implements UserManagementService {
     }
 
     private void ensureManageableTarget(UserAccount actor, UserAccount target) {
-        if (isRole(actor, UserConstants.ROLE_ADMIN) && !isRole(target, UserConstants.ROLE_ADMIN)) {
+        if (isRole(actor, UserConstants.ROLE_ADMIN)) {
             return;
         }
         if (isRole(actor, UserConstants.ROLE_MANAGER) && isManagedEmployee(actor, toUserAccountView(target))) {
@@ -441,11 +491,20 @@ public class UserManagementServiceImpl implements UserManagementService {
                 user.updateDate(),
                 user.lastLogin(),
                 includePermissions && canEdit(actor, user),
-                includePermissions && canDelete(actor, user)
+                includePermissions && canDelete(actor, user),
+                user.countryId(),
+                user.countryName(),
+                user.countryCode(),
+                user.countryFlagEmoji(),
+                user.phoneCodeId(),
+                user.dialCode(),
+                user.phoneNumber()
         );
     }
 
     private UserAccountView toUserAccountView(UserAccount user) {
+        Country country = user.getCountry();
+        PhoneCode phoneCode = user.getPhoneCode();
         return new UserAccountView(
                 user.getId(),
                 user.getCompanyId(),
@@ -459,13 +518,20 @@ public class UserManagementServiceImpl implements UserManagementService {
                 user.getUpdatedBy(),
                 user.getCreateDate(),
                 user.getUpdateDate(),
-                user.getLastLogin()
+                user.getLastLogin(),
+                country != null ? country.getId() : null,
+                country != null ? country.getName() : null,
+                country != null ? country.getCode() : null,
+                country != null ? country.getFlagEmoji() : null,
+                phoneCode != null ? phoneCode.getId() : null,
+                phoneCode != null ? phoneCode.getDialCode() : null,
+                user.getPhoneNumber()
         );
     }
 
     private boolean canEdit(UserAccount actor, UserAccountView user) {
         if (isRole(actor, UserConstants.ROLE_ADMIN)) {
-            return !isRole(user.role(), UserConstants.ROLE_ADMIN);
+            return true;
         }
         if (isRole(actor, UserConstants.ROLE_MANAGER)) {
             return isManagedEmployee(actor, user);
@@ -474,7 +540,8 @@ public class UserManagementServiceImpl implements UserManagementService {
     }
 
     private boolean isSupportedAdminRole(String roleName) {
-        return UserConstants.ROLE_MANAGER.equalsIgnoreCase(roleName)
+        return UserConstants.ROLE_ADMIN.equalsIgnoreCase(roleName)
+                || UserConstants.ROLE_MANAGER.equalsIgnoreCase(roleName)
                 || UserConstants.ROLE_EMPLOYEE.equalsIgnoreCase(roleName);
     }
 
@@ -551,7 +618,14 @@ public class UserManagementServiceImpl implements UserManagementService {
             String updatedBy,
             Instant createDate,
             Instant updateDate,
-            Instant lastLogin
+            Instant lastLogin,
+            Long countryId,
+            String countryName,
+            String countryCode,
+            String countryFlagEmoji,
+            Long phoneCodeId,
+            String dialCode,
+            String phoneNumber
     ) {
     }
 }

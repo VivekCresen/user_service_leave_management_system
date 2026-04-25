@@ -12,7 +12,7 @@ import java.util.stream.Stream;
 
 public interface UserRepository extends JpaRepository<UserAccount, Long> {
 
-    @EntityGraph(attributePaths = "roleReference")
+    @EntityGraph(attributePaths = {"roleReference", "country", "phoneCode"})
     Optional<UserAccount> findByUserNameIgnoreCaseOrEmailIdIgnoreCase(String username, String email);
 
     Optional<UserAccount> findByUserNameIgnoreCase(String username);
@@ -29,10 +29,10 @@ public interface UserRepository extends JpaRepository<UserAccount, Long> {
 
     List<UserAccount> findAllByOrderByUserNameAsc();
 
-    @EntityGraph(attributePaths = "roleReference")
+    @EntityGraph(attributePaths = {"roleReference", "country", "phoneCode"})
     List<UserAccount> findAllDetailedByOrderByUserNameAsc();
 
-    @EntityGraph(attributePaths = "roleReference")
+    @EntityGraph(attributePaths = {"roleReference", "country", "phoneCode"})
     @Query("""
             select u
             from UserAccount u
@@ -45,10 +45,10 @@ public interface UserRepository extends JpaRepository<UserAccount, Long> {
             @Param("role") String role
     );
 
-    @EntityGraph(attributePaths = "roleReference")
+    @EntityGraph(attributePaths = {"roleReference", "country", "phoneCode"})
     List<UserAccount> findAllByIdOrderByUserNameAsc(Long id);
 
-    @EntityGraph(attributePaths = "roleReference")
+    @EntityGraph(attributePaths = {"roleReference", "country", "phoneCode"})
     Optional<UserAccount> findDetailedById(Long id);
 
     @EntityGraph(attributePaths = "roleReference")

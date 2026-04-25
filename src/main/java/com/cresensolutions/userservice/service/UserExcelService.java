@@ -203,7 +203,8 @@ public class UserExcelService {
                 row.getRole().toUpperCase(),
                 row.getManagerUsername().isBlank() ? null : row.getManagerUsername(),
                 Boolean.parseBoolean(row.getActive()),
-                row.getGender()
+                row.getGender(),
+                null, null, null
         );
     }
 
