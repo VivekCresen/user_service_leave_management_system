@@ -6,6 +6,7 @@ import com.cresensolutions.userservice.dto.UpdateProfileRequest;
 import com.cresensolutions.userservice.dto.UpdateUserRequest;
 import com.cresensolutions.userservice.dto.UserDashboardResponse;
 import com.cresensolutions.userservice.service.UserManagementService;
+import com.cresensolutions.userservice.sse.SseEmitterService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.validation.annotation.Validated;
@@ -26,9 +27,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserManagementController {
 
     private final UserManagementService userManagementService;
+    private final SseEmitterService sseEmitterService;
 
-    public UserManagementController(UserManagementService userManagementService) {
+    public UserManagementController(UserManagementService userManagementService, SseEmitterService sseEmitterService) {
         this.userManagementService = userManagementService;
+        this.sseEmitterService = sseEmitterService;
     }
 
     @GetMapping("/dashboard/{actorUsername}")
@@ -38,17 +41,23 @@ public class UserManagementController {
 
     @PostMapping
     public ManagedUserResponse createUser(@Valid @RequestBody CreateUserRequest request) {
-        return userManagementService.createUser(request);
+        ManagedUserResponse result = userManagementService.createUser(request);
+        sseEmitterService.broadcast("USERS_UPDATED", "created");
+        return result;
     }
 
     @PutMapping("/{userId}")
     public ManagedUserResponse updateUser(@PathVariable Long userId, @Valid @RequestBody UpdateUserRequest request) {
-        return userManagementService.updateUser(userId, request);
+        ManagedUserResponse result = userManagementService.updateUser(userId, request);
+        sseEmitterService.broadcast("USERS_UPDATED", "updated");
+        return result;
     }
 
     @PatchMapping("/{userId}/profile")
     public ManagedUserResponse updateProfile(@PathVariable Long userId, @Valid @RequestBody UpdateProfileRequest request) {
-        return userManagementService.updateProfile(userId, request);
+        ManagedUserResponse result = userManagementService.updateProfile(userId, request);
+        sseEmitterService.broadcast("USERS_UPDATED", "profile-updated");
+        return result;
     }
 
     @DeleteMapping("/{userId}")
@@ -57,5 +66,6 @@ public class UserManagementController {
             @RequestParam @NotBlank(message = "Username is required") String actorUsername
     ) {
         userManagementService.deleteUser(userId, actorUsername);
+        sseEmitterService.broadcast("USERS_UPDATED", "deleted");
     }
 }

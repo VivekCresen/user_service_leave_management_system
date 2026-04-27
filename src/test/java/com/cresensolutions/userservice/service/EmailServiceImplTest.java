@@ -1,5 +1,6 @@
 package com.cresensolutions.userservice.service;
 
+import com.cresensolutions.userservice.model.EmailTemplate;
 import com.cresensolutions.userservice.repository.EmailTemplateRepository;
 import com.cresensolutions.userservice.service.Impl.EmailServiceImpl;
 import jakarta.mail.internet.MimeMessage;
@@ -20,14 +21,9 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class EmailServiceImplTest {
 
-    @Mock
-    private JavaMailSender mailSender;
-
-    @Mock
-    private MimeMessage mimeMessage;
-
-    @Mock
-    private EmailTemplateRepository emailTemplateRepository;
+    @Mock private JavaMailSender mailSender;
+    @Mock private MimeMessage mimeMessage;
+    @Mock private EmailTemplateRepository emailTemplateRepository;
 
     private EmailServiceImpl emailService;
 
@@ -42,6 +38,8 @@ class EmailServiceImplTest {
         lenient().when(emailTemplateRepository.findByTemplateTypeAndActiveTrue(anyString()))
                 .thenReturn(Optional.empty());
     }
+
+    // ── sendPasswordResetOtp ──────────────────────────────────────────────────
 
     @Test
     void sendPasswordResetOtp_configuredSender_sendsEmail() {
@@ -61,6 +59,98 @@ class EmailServiceImplTest {
 
         verify(mailSender, never()).send(any(MimeMessage.class));
     }
+
+    @Test
+    void sendPasswordResetOtp_unconfiguredSender_skipsAndLogsWarn() {
+        emailService = new EmailServiceImpl(mailSender, unconfiguredMail, emailTemplateRepository);
+
+        emailService.sendPasswordResetOtp("user@cresensolutions.com", "Alice", "123456");
+
+        verify(mailSender, never()).createMimeMessage();
+        verify(mailSender, never()).send(any(MimeMessage.class));
+    }
+
+    @Test
+    void sendPasswordResetOtp_withNonExistentLogoPath_sendsEmailWithoutLogo() {
+        MailProperties mailWithBadLogo = new StubMailProperties(
+                "noreply@cresensolutions.com", 10, "", "", "/nonexistent/logo.png");
+        when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+        emailService = new EmailServiceImpl(mailSender, mailWithBadLogo, emailTemplateRepository);
+
+        emailService.sendPasswordResetOtp("user@cresensolutions.com", "Alice", "123456");
+
+        verify(mailSender).send(mimeMessage);
+    }
+
+    @Test
+    void sendPasswordResetOtp_nullLogoPath_sendsEmailWithoutLogo() {
+        MailProperties mailWithNullLogo = new StubMailProperties(
+                "noreply@cresensolutions.com", 10, "", "", null);
+        when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+        emailService = new EmailServiceImpl(mailSender, mailWithNullLogo, emailTemplateRepository);
+
+        emailService.sendPasswordResetOtp("user@cresensolutions.com", "Alice", "123456");
+
+        verify(mailSender).send(mimeMessage);
+    }
+
+    @Test
+    void sendPasswordResetOtp_withExistingLogoFile_includesLogoInEmail() throws Exception {
+        File tempLogo = File.createTempFile("logo", ".png");
+        tempLogo.deleteOnExit();
+
+        MailProperties mailWithRealLogo = new StubMailProperties(
+                "noreply@cresensolutions.com", 10, "", "", tempLogo.getAbsolutePath());
+        when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+        emailService = new EmailServiceImpl(mailSender, mailWithRealLogo, emailTemplateRepository);
+
+        emailService.sendPasswordResetOtp("user@cresensolutions.com", "Alice", "123456");
+
+        verify(mailSender).send(mimeMessage);
+    }
+
+    @Test
+    void sendPasswordResetOtp_logoPathIsDirectory_sendsEmailWithoutLogo() throws Exception {
+        File tempDir = java.nio.file.Files.createTempDirectory("logodir").toFile();
+        tempDir.deleteOnExit();
+
+        MailProperties mailWithDirLogo = new StubMailProperties(
+                "noreply@cresensolutions.com", 10, "", "", tempDir.getAbsolutePath());
+        when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+        emailService = new EmailServiceImpl(mailSender, mailWithDirLogo, emailTemplateRepository);
+
+        emailService.sendPasswordResetOtp("user@cresensolutions.com", "Alice", "123456");
+
+        verify(mailSender).send(mimeMessage);
+    }
+
+    @Test
+    void sendPasswordResetOtp_withActiveTemplate_usesTemplateSubjectAndBody() {
+        EmailTemplate template = mock(EmailTemplate.class);
+        when(template.getSubject()).thenReturn("Custom OTP Subject");
+        when(template.getBodyHtml()).thenReturn("<p>Your OTP is {{otp}}</p>");
+
+        when(emailTemplateRepository.findByTemplateTypeAndActiveTrue(anyString()))
+                .thenReturn(Optional.of(template));
+        when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+        emailService = new EmailServiceImpl(mailSender, configuredMail, emailTemplateRepository);
+
+        emailService.sendPasswordResetOtp("user@cresensolutions.com", "Alice", "999888");
+
+        verify(mailSender).send(mimeMessage);
+    }
+
+    @Test
+    void sendPasswordResetOtp_nullFullNameAndOtp_handlesNullsSafely() {
+        when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+        emailService = new EmailServiceImpl(mailSender, configuredMail, emailTemplateRepository);
+
+        emailService.sendPasswordResetOtp("user@cresensolutions.com", null, null);
+
+        verify(mailSender).send(mimeMessage);
+    }
+
+    // ── sendNewUserCreatedEmail ───────────────────────────────────────────────
 
     @Test
     void sendNewUserCreatedEmail_configuredSender_sendsEmail() {
@@ -98,6 +188,39 @@ class EmailServiceImplTest {
     }
 
     @Test
+    void sendNewUserCreatedEmail_blankForgotPasswordLink_usesMailPropertiesUrl() {
+        MailProperties mailWithUrl = new StubMailProperties(
+                "noreply@cresensolutions.com", 10, "http://reset.example.com", "", "");
+        when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+        emailService = new EmailServiceImpl(mailSender, mailWithUrl, emailTemplateRepository);
+
+        emailService.sendNewUserCreatedEmail(
+                "user@cresensolutions.com", "Bob", 1L, "CRESEN004",
+                "bob", "EMPLOYEE", "  ");
+
+        verify(mailSender).send(mimeMessage);
+    }
+
+    @Test
+    void sendNewUserCreatedEmail_withActiveTemplate_usesTemplateBody() {
+        EmailTemplate template = mock(EmailTemplate.class);
+        when(template.getSubject()).thenReturn("Welcome!");
+        when(template.getBodyHtml()).thenReturn("<p>Hello {{fullName}}, your username is {{username}}</p>");
+
+        when(emailTemplateRepository.findByTemplateTypeAndActiveTrue(anyString()))
+                .thenReturn(Optional.of(template));
+        when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+        emailService = new EmailServiceImpl(mailSender, configuredMail, emailTemplateRepository);
+
+        emailService.sendNewUserCreatedEmail(
+                "user@cresensolutions.com", "Bob", 1L, "CRESEN001", "bob", "EMPLOYEE", null);
+
+        verify(mailSender).send(mimeMessage);
+    }
+
+    // ── sendUserDeletedEmail ──────────────────────────────────────────────────
+
+    @Test
     void sendUserDeletedEmail_configuredSender_sendsEmail() {
         when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
         emailService = new EmailServiceImpl(mailSender, configuredMail, emailTemplateRepository);
@@ -119,6 +242,45 @@ class EmailServiceImplTest {
 
         verify(mailSender, never()).send(any(MimeMessage.class));
     }
+
+    @Test
+    void sendUserDeletedEmail_unconfiguredSender_skipsAndLogsWarn() {
+        emailService = new EmailServiceImpl(mailSender, unconfiguredMail, emailTemplateRepository);
+
+        emailService.sendUserDeletedEmail(
+                "user@cresensolutions.com", "Carol", "carol", "EMPLOYEE", "admin", "ADMIN");
+
+        verify(mailSender, never()).createMimeMessage();
+    }
+
+    @Test
+    void sendUserDeletedEmail_withActiveTemplate_usesTemplateBody() {
+        EmailTemplate template = mock(EmailTemplate.class);
+        when(template.getSubject()).thenReturn("Account Removed");
+        when(template.getBodyHtml()).thenReturn("<p>Goodbye {{fullName}}</p>");
+
+        when(emailTemplateRepository.findByTemplateTypeAndActiveTrue(anyString()))
+                .thenReturn(Optional.of(template));
+        when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+        emailService = new EmailServiceImpl(mailSender, configuredMail, emailTemplateRepository);
+
+        emailService.sendUserDeletedEmail(
+                "user@cresensolutions.com", "Carol", "carol", "EMPLOYEE", "admin", "ADMIN");
+
+        verify(mailSender).send(mimeMessage);
+    }
+
+    @Test
+    void sendUserDeletedEmail_nullFields_handlesNullsSafely() {
+        when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+        emailService = new EmailServiceImpl(mailSender, configuredMail, emailTemplateRepository);
+
+        emailService.sendUserDeletedEmail("user@cresensolutions.com", null, null, null, null, null);
+
+        verify(mailSender).send(mimeMessage);
+    }
+
+    // ── sendUserRoleChangedEmail ──────────────────────────────────────────────
 
     @Test
     void sendUserRoleChangedEmail_configuredSender_sendsEmail() {
@@ -161,29 +323,14 @@ class EmailServiceImplTest {
     }
 
     @Test
-    void sendPasswordResetOtp_withNonExistentLogoPath_sendsEmailWithoutLogo() {
-        MailProperties mailWithBadLogo = new StubMailProperties(
-                "noreply@cresensolutions.com", 10, "", "", "/nonexistent/logo.png");
-        when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
-        emailService = new EmailServiceImpl(mailSender, mailWithBadLogo, emailTemplateRepository);
+    void sendUserRoleChangedEmail_unconfiguredSender_skipsAndLogsWarn() {
+        emailService = new EmailServiceImpl(mailSender, unconfiguredMail, emailTemplateRepository);
 
-        emailService.sendPasswordResetOtp("user@cresensolutions.com", "Alice", "123456");
+        emailService.sendUserRoleChangedEmail(
+                "user@cresensolutions.com", "Dave", "dave",
+                "EMPLOYEE", "MANAGER", "admin", "ADMIN", null);
 
-        verify(mailSender).send(mimeMessage);
-    }
-
-    @Test
-    void sendNewUserCreatedEmail_blankForgotPasswordLink_usesMailPropertiesUrl() {
-        MailProperties mailWithUrl = new StubMailProperties(
-                "noreply@cresensolutions.com", 10, "http://reset.example.com", "", "");
-        when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
-        emailService = new EmailServiceImpl(mailSender, mailWithUrl, emailTemplateRepository);
-
-        emailService.sendNewUserCreatedEmail(
-                "user@cresensolutions.com", "Bob", 1L, "CRESEN004",
-                "bob", "EMPLOYEE", "  ");
-
-        verify(mailSender).send(mimeMessage);
+        verify(mailSender, never()).createMimeMessage();
     }
 
     @Test
@@ -201,59 +348,30 @@ class EmailServiceImplTest {
     }
 
     @Test
-    void sendPasswordResetOtp_unconfiguredSender_skipsAndLogsWarn() {
-        emailService = new EmailServiceImpl(mailSender, unconfiguredMail, emailTemplateRepository);
+    void sendUserRoleChangedEmail_withActiveTemplate_usesTemplateBody() {
+        EmailTemplate template = mock(EmailTemplate.class);
+        when(template.getSubject()).thenReturn("Role Changed");
+        when(template.getBodyHtml()).thenReturn("<p>{{fullName}} your role is now {{newRole}}</p>");
 
-        emailService.sendPasswordResetOtp("user@cresensolutions.com", "Alice", "123456");
-
-        verify(mailSender, never()).createMimeMessage();
-        verify(mailSender, never()).send(any(MimeMessage.class));
-    }
-
-    @Test
-    void sendUserDeletedEmail_unconfiguredSender_skipsAndLogsWarn() {
-        emailService = new EmailServiceImpl(mailSender, unconfiguredMail, emailTemplateRepository);
-
-        emailService.sendUserDeletedEmail(
-                "user@cresensolutions.com", "Carol", "carol", "EMPLOYEE", "admin", "ADMIN");
-
-        verify(mailSender, never()).createMimeMessage();
-    }
-
-    @Test
-    void sendUserRoleChangedEmail_unconfiguredSender_skipsAndLogsWarn() {
-        emailService = new EmailServiceImpl(mailSender, unconfiguredMail, emailTemplateRepository);
+        when(emailTemplateRepository.findByTemplateTypeAndActiveTrue(anyString()))
+                .thenReturn(Optional.of(template));
+        when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+        emailService = new EmailServiceImpl(mailSender, configuredMail, emailTemplateRepository);
 
         emailService.sendUserRoleChangedEmail(
                 "user@cresensolutions.com", "Dave", "dave",
-                "EMPLOYEE", "MANAGER", "admin", "ADMIN", null);
-
-        verify(mailSender, never()).createMimeMessage();
-    }
-
-    @Test
-    void sendPasswordResetOtp_withExistingLogoFile_includesLogoInEmail() throws Exception {
-       File tempLogo = File.createTempFile("logo", ".png");
-        tempLogo.deleteOnExit();
-
-        MailProperties mailWithRealLogo = new StubMailProperties(
-                "noreply@cresensolutions.com", 10, "", "", tempLogo.getAbsolutePath());
-        when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
-        emailService = new EmailServiceImpl(mailSender, mailWithRealLogo, emailTemplateRepository);
-
-        emailService.sendPasswordResetOtp("user@cresensolutions.com", "Alice", "123456");
+                "EMPLOYEE", "MANAGER", "admin", "ADMIN", "http://login.example.com");
 
         verify(mailSender).send(mimeMessage);
     }
 
     @Test
-    void sendPasswordResetOtp_nullLogoPath_sendsEmailWithoutLogo() {
-        MailProperties mailWithNullLogo = new StubMailProperties(
-                "noreply@cresensolutions.com", 10, "", "", null);
+    void sendUserRoleChangedEmail_nullFields_handlesNullsSafely() {
         when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
-        emailService = new EmailServiceImpl(mailSender, mailWithNullLogo, emailTemplateRepository);
+        emailService = new EmailServiceImpl(mailSender, configuredMail, emailTemplateRepository);
 
-        emailService.sendPasswordResetOtp("user@cresensolutions.com", "Alice", "123456");
+        emailService.sendUserRoleChangedEmail(
+                "user@cresensolutions.com", null, null, null, null, null, null, null);
 
         verify(mailSender).send(mimeMessage);
     }

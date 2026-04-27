@@ -1,4 +1,4 @@
-package com.cresensolutions.userservice.service;
+package com.cresensolutions.userservice.service.Impl;
 
 import com.cresensolutions.userservice.dto.AttendanceLogDto;
 import com.cresensolutions.userservice.exception.ResourceNotFoundException;
@@ -6,6 +6,7 @@ import com.cresensolutions.userservice.model.AttendanceLog;
 import com.cresensolutions.userservice.model.UserAccount;
 import com.cresensolutions.userservice.repository.AttendanceLogRepository;
 import com.cresensolutions.userservice.repository.UserRepository;
+import com.cresensolutions.userservice.service.AttendanceLogService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
