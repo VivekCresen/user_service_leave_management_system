@@ -26,7 +26,10 @@ public class AttendanceLogScheduler {
         List<AttendanceLog> logs = attendanceLogRepository.findLogsForAutoCheckout(cutoffTime);
         logs.stream()
                 .filter(log -> log.getCheckInTime() != null)
-                .forEach(log -> log.setCheckOutTime(log.getCheckInTime().plus(12, ChronoUnit.HOURS)));
+                .forEach(log -> {
+                    log.setCheckOutTime(log.getCheckInTime().plus(12, ChronoUnit.HOURS));
+                    log.setAutoCheckedOut(true);
+                });
         if (!logs.isEmpty()) attendanceLogRepository.saveAll(logs);
     }
 }

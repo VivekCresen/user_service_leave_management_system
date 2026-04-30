@@ -11,10 +11,11 @@ public class AttendanceLogDto {
     private Instant checkInTime;
     private Instant checkOutTime;
     private LocalDate dateOfLog;
+    private boolean autoCheckedOut;
 
     public AttendanceLogDto() {}
 
-    public AttendanceLogDto(Long id, String username, String fullName, String role, Instant checkInTime, Instant checkOutTime, LocalDate dateOfLog) {
+    public AttendanceLogDto(Long id, String username, String fullName, String role, Instant checkInTime, Instant checkOutTime, LocalDate dateOfLog, boolean autoCheckedOut) {
         this.id = id;
         this.username = username;
         this.fullName = fullName;
@@ -22,6 +23,7 @@ public class AttendanceLogDto {
         this.checkInTime = checkInTime;
         this.checkOutTime = checkOutTime;
         this.dateOfLog = dateOfLog;
+        this.autoCheckedOut = autoCheckedOut;
     }
 
     public Long getId() {
@@ -78,5 +80,13 @@ public class AttendanceLogDto {
 
     public void setDateOfLog(LocalDate dateOfLog) {
         this.dateOfLog = dateOfLog;
+    }
+
+    public boolean isAutoCheckedOut() {
+        return autoCheckedOut;
+    }
+
+    public void setAutoCheckedOut(boolean autoCheckedOut) {
+        this.autoCheckedOut = autoCheckedOut;
     }
 }

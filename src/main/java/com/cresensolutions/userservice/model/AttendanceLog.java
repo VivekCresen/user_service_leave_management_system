@@ -35,6 +35,9 @@ public class AttendanceLog {
     @Column(name = "date_of_log", nullable = false)
     private LocalDate dateOfLog;
 
+    @Column(name = "auto_checked_out", nullable = false)
+    private boolean autoCheckedOut = false;
+
     public AttendanceLog() {
     }
 
@@ -78,5 +81,13 @@ public class AttendanceLog {
 
     public void setDateOfLog(LocalDate dateOfLog) {
         this.dateOfLog = dateOfLog;
+    }
+
+    public boolean isAutoCheckedOut() {
+        return autoCheckedOut;
+    }
+
+    public void setAutoCheckedOut(boolean autoCheckedOut) {
+        this.autoCheckedOut = autoCheckedOut;
     }
 }

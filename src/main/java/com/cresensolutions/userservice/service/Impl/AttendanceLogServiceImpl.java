@@ -112,7 +112,8 @@ public class AttendanceLogServiceImpl implements AttendanceLogService {
                 user.getRole(),
                 log.getCheckInTime(),
                 log.getCheckOutTime(),
-                log.getDateOfLog()
+                log.getDateOfLog(),
+                log.isAutoCheckedOut()
         );
     }
 }
