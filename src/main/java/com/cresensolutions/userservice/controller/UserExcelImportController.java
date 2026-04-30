@@ -64,16 +64,15 @@ public class UserExcelImportController {
         if (name == null || (!name.endsWith(".xlsx") && !name.endsWith(".xls")))
             return badRequest("Only .xlsx or .xls files are supported.");
 
-        // ── Build lookup sets via streams ─────────────────────────────────────
+        // ── Build lookup sets in a single pass ──────────────────────────────
         List<UserAccount> allUsers = userRepository.findAllByOrderByUserNameAsc();
 
-        Set<String> existingUsernames = allUsers.stream()
-                .map(u -> u.getUsername().toLowerCase())
-                .collect(Collectors.toUnmodifiableSet());
-
-        Set<String> existingEmails = allUsers.stream()
-                .map(u -> u.getEmail().toLowerCase())
-                .collect(Collectors.toUnmodifiableSet());
+        Set<String> existingUsernames = new HashSet<>();
+        Set<String> existingEmails    = new HashSet<>();
+        allUsers.forEach(u -> {
+            existingUsernames.add(u.getUsername().toLowerCase());
+            existingEmails.add(u.getEmail().toLowerCase());
+        });
 
         Set<String> managerUsernames = userRepository.findRoleAssignments().stream()
                 .filter(r -> UserConstants.ROLE_MANAGER.equalsIgnoreCase(r.getRole()))

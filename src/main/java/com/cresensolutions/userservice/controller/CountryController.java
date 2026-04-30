@@ -2,8 +2,7 @@ package com.cresensolutions.userservice.controller;
 
 import com.cresensolutions.userservice.dto.CountryResponse;
 import com.cresensolutions.userservice.dto.PhoneCodeResponse;
-import com.cresensolutions.userservice.repository.CountryRepository;
-import com.cresensolutions.userservice.repository.PhoneCodeRepository;
+import com.cresensolutions.userservice.service.CountryService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -14,30 +13,19 @@ import java.util.List;
 @RequestMapping("/api/countries")
 public class CountryController {
 
-    private final CountryRepository countryRepository;
-    private final PhoneCodeRepository phoneCodeRepository;
+    private final CountryService countryService;
 
-    public CountryController(CountryRepository countryRepository, PhoneCodeRepository phoneCodeRepository) {
-        this.countryRepository = countryRepository;
-        this.phoneCodeRepository = phoneCodeRepository;
+    public CountryController(CountryService countryService) {
+        this.countryService = countryService;
     }
 
     @GetMapping
     public List<CountryResponse> getCountries() {
-        return countryRepository.findAllByOrderByNameAsc().stream()
-                .map(c -> new CountryResponse(c.getId(), c.getName(), c.getCode(), c.getFlagEmoji()))
-                .toList();
+        return countryService.getCountries();
     }
 
     @GetMapping("/phone-codes")
     public List<PhoneCodeResponse> getPhoneCodes() {
-        return phoneCodeRepository.findAllWithCountryOrderByCountryName().stream()
-                .map(p -> new PhoneCodeResponse(
-                        p.getId(),
-                        p.getCountry().getId(),
-                        p.getCountry().getName(),
-                        p.getDialCode(),
-                        p.getCountry().getFlagEmoji()))
-                .toList();
+        return countryService.getPhoneCodes();
     }
 }

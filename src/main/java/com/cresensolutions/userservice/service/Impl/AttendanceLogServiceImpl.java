@@ -14,7 +14,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 @Service
 public class AttendanceLogServiceImpl implements AttendanceLogService {
@@ -34,11 +33,12 @@ public class AttendanceLogServiceImpl implements AttendanceLogService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with username: " + username));
 
         LocalDate today = LocalDate.now();
-        Optional<AttendanceLog> existingLog = attendanceLogRepository.findByUserNameAndDate(username, today);
+        Optional<AttendanceLog> activeLog = attendanceLogRepository
+                .findFirstByUserAccountUserNameIgnoreCaseAndDateOfLogAndCheckOutTimeIsNullOrderByCheckInTimeDesc(username, today);
 
         AttendanceLog log;
-        if (existingLog.isPresent()) {
-            log = existingLog.get();
+        if (activeLog.isPresent()) {
+            log = activeLog.get();
         } else {
             log = new AttendanceLog(userAccount, Instant.now(), today);
             log = attendanceLogRepository.save(log);
@@ -51,7 +51,8 @@ public class AttendanceLogServiceImpl implements AttendanceLogService {
     @Transactional
     public AttendanceLogDto checkOut(String username) {
         LocalDate today = LocalDate.now();
-        AttendanceLog log = attendanceLogRepository.findByUserNameAndDate(username, today)
+        AttendanceLog log = attendanceLogRepository
+                .findFirstByUserAccountUserNameIgnoreCaseAndDateOfLogAndCheckOutTimeIsNullOrderByCheckInTimeDesc(username, today)
                 .orElseThrow(() -> new ResourceNotFoundException("No active check-in found for today."));
 
         log.setCheckOutTime(Instant.now());
@@ -64,8 +65,17 @@ public class AttendanceLogServiceImpl implements AttendanceLogService {
     @Transactional(readOnly = true)
     public AttendanceLogDto getTodayStatus(String username) {
         LocalDate today = LocalDate.now();
-        Optional<AttendanceLog> log = attendanceLogRepository.findByUserNameAndDate(username, today);
-        return log.map(this::mapToDto).orElse(null);
+        Optional<AttendanceLog> activeLog = attendanceLogRepository
+                .findFirstByUserAccountUserNameIgnoreCaseAndDateOfLogAndCheckOutTimeIsNullOrderByCheckInTimeDesc(username, today);
+
+        if (activeLog.isPresent()) {
+            return mapToDto(activeLog.get());
+        }
+
+        Optional<AttendanceLog> latestLog = attendanceLogRepository
+                .findFirstByUserAccountUserNameIgnoreCaseAndDateOfLogOrderByCheckInTimeDesc(username, today);
+
+        return latestLog.map(this::mapToDto).orElse(null);
     }
 
     @Override
@@ -73,7 +83,7 @@ public class AttendanceLogServiceImpl implements AttendanceLogService {
     public List<AttendanceLogDto> getAllLogs() {
         return attendanceLogRepository.findAll().stream()
                 .map(this::mapToDto)
-                .collect(Collectors.toList());
+                .toList();
     }
 
     @Override
@@ -81,7 +91,7 @@ public class AttendanceLogServiceImpl implements AttendanceLogService {
     public List<AttendanceLogDto> getLogsByUser(String username) {
         return attendanceLogRepository.findByUserName(username).stream()
                 .map(this::mapToDto)
-                .collect(Collectors.toList());
+                .toList();
     }
 
     @Override
@@ -90,7 +100,7 @@ public class AttendanceLogServiceImpl implements AttendanceLogService {
         LocalDate localDate = LocalDate.parse(date);
         return attendanceLogRepository.findByDate(localDate).stream()
                 .map(this::mapToDto)
-                .collect(Collectors.toList());
+                .toList();
     }
 
     private AttendanceLogDto mapToDto(AttendanceLog log) {

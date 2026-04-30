@@ -1,5 +1,6 @@
 package com.cresensolutions.userservice.service.Impl;
 
+import com.cresensolutions.userservice.common.StringUtils;
 import com.cresensolutions.userservice.common.UserConstants;
 import com.cresensolutions.userservice.model.EmailTemplate;
 import com.cresensolutions.userservice.repository.EmailTemplateRepository;
@@ -171,5 +172,5 @@ public class EmailServiceImpl implements EmailService {
         return f;
     }
 
-    private String safe(String v) { return v != null ? v : ""; }
+    private String safe(String v) { return StringUtils.safe(v); }
 }

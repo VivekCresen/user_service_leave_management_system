@@ -14,6 +14,8 @@ import com.cresensolutions.userservice.repository.CountryRepository;
 import com.cresensolutions.userservice.repository.PhoneCodeRepository;
 import com.cresensolutions.userservice.repository.RoleRepository;
 import com.cresensolutions.userservice.repository.UserRepository;
+import com.cresensolutions.userservice.common.StringUtils;
+import com.cresensolutions.userservice.common.TransactionUtils;
 import com.cresensolutions.userservice.common.UserConstants;
 import com.cresensolutions.userservice.service.EmailService;
 import com.cresensolutions.userservice.service.MailProperties;
@@ -25,8 +27,6 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
 import java.util.Comparator;
@@ -134,17 +134,11 @@ public class UserManagementServiceImpl implements UserManagementService {
         user.setCreatedBy(resolveOwnerUsername(actor, roleName, managerUsername));
         user.setUpdatedBy(actor.getUsername());
 
-        if (request.countryId() != null) {
-            user.setCountry(countryRepository.findById(request.countryId()).orElse(null));
-        }
-        if (request.phoneCodeId() != null) {
-            user.setPhoneCode(phoneCodeRepository.findById(request.phoneCodeId()).orElse(null));
-        }
-        user.setPhoneNumber(request.phoneNumber());
+        applyContactInfo(user, request.countryId(), request.phoneCodeId(), request.phoneNumber());
 
         UserAccount savedUser = userRepository.save(user);
         log.info("User {} created by {} with role {}", savedUser.getUsername(), actor.getUsername(), savedUser.getRole());
-        runAfterCommit(() -> emailService.sendNewUserCreatedEmail(
+        TransactionUtils.runAfterCommit(() -> emailService.sendNewUserCreatedEmail(
                 savedUser.getEmail(),
                 savedUser.getFullName(),
                 savedUser.getId(),
@@ -187,17 +181,7 @@ public class UserManagementServiceImpl implements UserManagementService {
         target.setUpdateDate(Instant.now());
         target.setUpdatedBy(actor.getUsername());
 
-        if (request.countryId() != null) {
-            target.setCountry(countryRepository.findById(request.countryId()).orElse(null));
-        } else {
-            target.setCountry(null);
-        }
-        if (request.phoneCodeId() != null) {
-            target.setPhoneCode(phoneCodeRepository.findById(request.phoneCodeId()).orElse(null));
-        } else {
-            target.setPhoneCode(null);
-        }
-        target.setPhoneNumber(request.phoneNumber());
+        applyContactInfo(target, request.countryId(), request.phoneCodeId(), request.phoneNumber());
 
         if (password != null && !password.isBlank()) {
             target.setPassword(passwordEncoder.encode(password));
@@ -206,7 +190,7 @@ public class UserManagementServiceImpl implements UserManagementService {
         UserAccount updatedUser = target;
         log.info("User {} updated by {}", updatedUser.getUsername(), actor.getUsername());
         if (roleChangedByAdmin) {
-            runAfterCommit(() -> emailService.sendUserRoleChangedEmail(
+            TransactionUtils.runAfterCommit(() -> emailService.sendUserRoleChangedEmail(
                     updatedUser.getEmail(),
                     updatedUser.getFullName(),
                     updatedUser.getUsername(),
@@ -259,7 +243,7 @@ public class UserManagementServiceImpl implements UserManagementService {
         String deletedUserRole = target.getRole();
         userRepository.delete(target);
         log.info("User {} deleted by {}", target.getUsername(), actor.getUsername());
-        runAfterCommit(() -> emailService.sendUserDeletedEmail(
+        TransactionUtils.runAfterCommit(() -> emailService.sendUserDeletedEmail(
                 deletedUserEmail,
                 deletedUserFullName,
                 deletedUserUsername,
@@ -335,15 +319,11 @@ public class UserManagementServiceImpl implements UserManagementService {
     }
 
     private String requireTrimmedValue(String value, String message) {
-        String normalized = normalizeOptionalValue(value);
-        if (normalized == null || normalized.isBlank()) {
-            throw new IllegalArgumentException(message);
-        }
-        return normalized;
+        return StringUtils.requireNonBlank(value, message);
     }
 
     private String normalizeOptionalValue(String value) {
-        return value == null ? null : value.trim();
+        return StringUtils.normalizeOptional(value);
     }
 
     private void ensureCanCreateRole(UserAccount actor, String requestedRole) {
@@ -462,6 +442,12 @@ public class UserManagementServiceImpl implements UserManagementService {
         PasswordUtils.validate(password);
     }
 
+    private void applyContactInfo(UserAccount user, Long countryId, Long phoneCodeId, String phoneNumber) {
+        user.setCountry(countryId != null ? countryRepository.findById(countryId).orElse(null) : null);
+        user.setPhoneCode(phoneCodeId != null ? phoneCodeRepository.findById(phoneCodeId).orElse(null) : null);
+        user.setPhoneNumber(phoneNumber);
+    }
+
     private Role loadRole(String uniqueName) {
         return roleRepository.findByUniqueNameIgnoreCase(uniqueName)
                 .orElseThrow(() -> new ResourceNotFoundException("Role not found: " + uniqueName));
@@ -569,7 +555,7 @@ public class UserManagementServiceImpl implements UserManagementService {
     }
 
     private String normalizeRoleName(String roleName) {
-        return roleName == null ? "" : roleName.trim().toUpperCase(Locale.ROOT);
+        return StringUtils.normalizeRole(roleName);
     }
 
     private boolean isSameUser(UserAccount actor, UserAccountView user) {
@@ -579,20 +565,6 @@ public class UserManagementServiceImpl implements UserManagementService {
         return actor.getUsername() != null
                 && user.username() != null
                 && actor.getUsername().equalsIgnoreCase(user.username());
-    }
-
-    private void runAfterCommit(Runnable action) {
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            action.run();
-            return;
-        }
-
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                action.run();
-            }
-        });
     }
 
     private record UserDashboardMetrics(

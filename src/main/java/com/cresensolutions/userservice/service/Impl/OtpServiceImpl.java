@@ -1,5 +1,6 @@
 package com.cresensolutions.userservice.service.Impl;
 
+import com.cresensolutions.userservice.common.StringUtils;
 import com.cresensolutions.userservice.exception.InvalidOtpException;
 import com.cresensolutions.userservice.model.PasswordResetOtp;
 import com.cresensolutions.userservice.model.UserAccount;
@@ -78,7 +79,7 @@ public class OtpServiceImpl implements OtpService {
     }
 
     private String normalize(String value) {
-        return value == null ? "" : value.trim().toLowerCase();
+        return StringUtils.normalize(value);
     }
 
     private Optional<PasswordResetOtp> findOtpRecord(UserAccount user, String normalizedEmail) {

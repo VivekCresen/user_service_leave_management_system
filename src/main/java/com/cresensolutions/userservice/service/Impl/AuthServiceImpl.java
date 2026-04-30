@@ -1,5 +1,7 @@
 package com.cresensolutions.userservice.service.Impl;
 
+import com.cresensolutions.userservice.common.StringUtils;
+import com.cresensolutions.userservice.common.TransactionUtils;
 import com.cresensolutions.userservice.dto.LoginRequest;
 import com.cresensolutions.userservice.dto.LoginResponse;
 import com.cresensolutions.userservice.dto.OtpRequest;
@@ -18,8 +20,6 @@ import com.cresensolutions.userservice.validation.PasswordUtils;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -77,7 +77,7 @@ public class AuthServiceImpl implements AuthService {
         }
 
         user.setLastLogin(Instant.now());
-        runAfterCommit(() -> authenticationAuditService.logLoginSuccess(user.getUsername()));
+        TransactionUtils.runAfterCommit(() -> authenticationAuditService.logLoginSuccess(user.getUsername()));
         return toLoginResponse(user, "Login successful");
     }
 
@@ -91,7 +91,7 @@ public class AuthServiceImpl implements AuthService {
         ensureActiveUser(user);
 
         String otp = otpService.createOtp(user);
-        runAfterCommit(() -> emailService.sendPasswordResetOtp(user.getEmail(), user.getFullName(), otp));
+        TransactionUtils.runAfterCommit(() -> emailService.sendPasswordResetOtp(user.getEmail(), user.getFullName(), otp));
         return new OtpResponse("OTP sent to your email address.");
     }
 
@@ -117,7 +117,7 @@ public class AuthServiceImpl implements AuthService {
         otpService.validateOtp(user, request.otp());
         user.setPassword(passwordEncoder.encode(decodedPassword));
         otpService.clearOtp(user);
-        runAfterCommit(() -> authenticationAuditService.logPasswordReset(email));
+        TransactionUtils.runAfterCommit(() -> authenticationAuditService.logPasswordReset(email));
         return toLoginResponse(user, "Password reset successful");
     }
 
@@ -144,7 +144,7 @@ public class AuthServiceImpl implements AuthService {
     }
 
     private String normalize(String value) {
-        return value == null ? "" : value.trim().toLowerCase();
+        return StringUtils.normalize(value);
     }
 
     private AuthenticationFailedException failedLogin(String loginValue) {
@@ -195,7 +195,7 @@ public class AuthServiceImpl implements AuthService {
                 .flatMap(role -> Stream.of(role.getRoleName(), role.getUniqueName(), role.getSummaryName())
                         .filter(Objects::nonNull)
                         .map(alias -> Map.entry(normalizeRoleName(alias), normalizeRoleName(role.getSummaryName()))))
-                .collect(Collectors.toMap(entry -> entry.getKey(), entry -> entry.getValue(), (existing, ignored) -> existing, LinkedHashMap::new));
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (existing, ignored) -> existing, LinkedHashMap::new));
     }
 
     private RoleAssignment toRoleAssignment(UserRepository.RoleAssignmentView user, Map<String, String> canonicalRoleByAlias) {
@@ -212,24 +212,9 @@ public class AuthServiceImpl implements AuthService {
     }
 
     private String normalizeRoleName(String roleName) {
-        return roleName == null ? "" : roleName.trim().toUpperCase();
+        return StringUtils.normalizeRole(roleName);
     }
 
 
-    private void runAfterCommit(Runnable action) {
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            action.run();
-            return;
-        }
-
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                action.run();
-            }
-        });
-    }
-
-    private record RoleAssignment(String roleName, String username) {
-    }
+    private record RoleAssignment(String roleName, String username) {}
 }
