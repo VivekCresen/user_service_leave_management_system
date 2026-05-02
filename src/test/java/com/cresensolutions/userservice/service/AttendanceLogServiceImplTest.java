@@ -2,6 +2,7 @@ package com.cresensolutions.userservice.service;
 
 import com.cresensolutions.userservice.dto.AttendanceLogDto;
 import com.cresensolutions.userservice.exception.ResourceNotFoundException;
+import com.cresensolutions.userservice.messaging.UserEventPublisher;
 import com.cresensolutions.userservice.model.AttendanceLog;
 import com.cresensolutions.userservice.model.UserAccount;
 import com.cresensolutions.userservice.repository.AttendanceLogRepository;
@@ -28,11 +29,15 @@ class AttendanceLogServiceImplTest {
 
     @Mock private AttendanceLogRepository attendanceLogRepository;
     @Mock private UserRepository userRepository;
+    @Mock private UserEventPublisher eventPublisher;
 
     @InjectMocks private AttendanceLogServiceImpl attendanceLogService;
 
     private UserAccount userAccount;
     private AttendanceLog attendanceLog;
+
+    // The real method name used by the impl
+    private static final String FIND_ACTIVE = "findFirstByUserAccountUserNameIgnoreCaseAndDateOfLogAndCheckOutTimeIsNullOrderByCheckInTimeDesc";
 
     @BeforeEach
     void setUp() {
@@ -40,11 +45,15 @@ class AttendanceLogServiceImplTest {
         attendanceLog = new AttendanceLog(userAccount, Instant.now(), LocalDate.now());
     }
 
+    // ── checkIn ───────────────────────────────────────────────────────────────
 
     @Test
     void checkIn_noExistingLog_createsNewLog() {
         when(userRepository.findByUserNameIgnoreCase("john")).thenReturn(Optional.of(userAccount));
-        when(attendanceLogRepository.findByUserNameAndDate("john", LocalDate.now())).thenReturn(Optional.empty());
+        when(attendanceLogRepository
+                .findFirstByUserAccountUserNameIgnoreCaseAndDateOfLogAndCheckOutTimeIsNullOrderByCheckInTimeDesc(
+                        "john", LocalDate.now()))
+                .thenReturn(Optional.empty());
         when(attendanceLogRepository.save(any(AttendanceLog.class))).thenReturn(attendanceLog);
 
         AttendanceLogDto result = attendanceLogService.checkIn("john");
@@ -55,9 +64,12 @@ class AttendanceLogServiceImplTest {
     }
 
     @Test
-    void checkIn_existingLogToday_returnsExistingLog() {
+    void checkIn_existingActiveLogToday_returnsExistingWithoutSave() {
         when(userRepository.findByUserNameIgnoreCase("john")).thenReturn(Optional.of(userAccount));
-        when(attendanceLogRepository.findByUserNameAndDate("john", LocalDate.now())).thenReturn(Optional.of(attendanceLog));
+        when(attendanceLogRepository
+                .findFirstByUserAccountUserNameIgnoreCaseAndDateOfLogAndCheckOutTimeIsNullOrderByCheckInTimeDesc(
+                        "john", LocalDate.now()))
+                .thenReturn(Optional.of(attendanceLog));
 
         AttendanceLogDto result = attendanceLogService.checkIn("john");
 
@@ -74,10 +86,14 @@ class AttendanceLogServiceImplTest {
                 .hasMessageContaining("User not found with username: ghost");
     }
 
+    // ── checkOut ──────────────────────────────────────────────────────────────
 
     @Test
     void checkOut_existingCheckIn_setsCheckOutTime() {
-        when(attendanceLogRepository.findByUserNameAndDate("john", LocalDate.now())).thenReturn(Optional.of(attendanceLog));
+        when(attendanceLogRepository
+                .findFirstByUserAccountUserNameIgnoreCaseAndDateOfLogAndCheckOutTimeIsNullOrderByCheckInTimeDesc(
+                        "john", LocalDate.now()))
+                .thenReturn(Optional.of(attendanceLog));
         when(attendanceLogRepository.save(any(AttendanceLog.class))).thenReturn(attendanceLog);
 
         AttendanceLogDto result = attendanceLogService.checkOut("john");
@@ -88,18 +104,25 @@ class AttendanceLogServiceImplTest {
     }
 
     @Test
-    void checkOut_noCheckInToday_throwsResourceNotFoundException() {
-        when(attendanceLogRepository.findByUserNameAndDate("john", LocalDate.now())).thenReturn(Optional.empty());
+    void checkOut_noActiveCheckInToday_throwsResourceNotFoundException() {
+        when(attendanceLogRepository
+                .findFirstByUserAccountUserNameIgnoreCaseAndDateOfLogAndCheckOutTimeIsNullOrderByCheckInTimeDesc(
+                        "john", LocalDate.now()))
+                .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> attendanceLogService.checkOut("john"))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("No active check-in found for today");
     }
 
+    // ── getTodayStatus ────────────────────────────────────────────────────────
 
     @Test
-    void getTodayStatus_logExists_returnsDto() {
-        when(attendanceLogRepository.findByUserNameAndDate("john", LocalDate.now())).thenReturn(Optional.of(attendanceLog));
+    void getTodayStatus_activeLogExists_returnsDto() {
+        when(attendanceLogRepository
+                .findFirstByUserAccountUserNameIgnoreCaseAndDateOfLogAndCheckOutTimeIsNullOrderByCheckInTimeDesc(
+                        "john", LocalDate.now()))
+                .thenReturn(Optional.of(attendanceLog));
 
         AttendanceLogDto result = attendanceLogService.getTodayStatus("john");
 
@@ -108,14 +131,41 @@ class AttendanceLogServiceImplTest {
     }
 
     @Test
-    void getTodayStatus_noLog_returnsNull() {
-        when(attendanceLogRepository.findByUserNameAndDate("john", LocalDate.now())).thenReturn(Optional.empty());
+    void getTodayStatus_noActiveLog_fallsBackToLatest() {
+        AttendanceLog checkedOut = new AttendanceLog(userAccount, Instant.now(), LocalDate.now());
+        checkedOut.setCheckOutTime(Instant.now());
+
+        when(attendanceLogRepository
+                .findFirstByUserAccountUserNameIgnoreCaseAndDateOfLogAndCheckOutTimeIsNullOrderByCheckInTimeDesc(
+                        "john", LocalDate.now()))
+                .thenReturn(Optional.empty());
+        when(attendanceLogRepository
+                .findFirstByUserAccountUserNameIgnoreCaseAndDateOfLogOrderByCheckInTimeDesc(
+                        "john", LocalDate.now()))
+                .thenReturn(Optional.of(checkedOut));
+
+        AttendanceLogDto result = attendanceLogService.getTodayStatus("john");
+
+        assertThat(result).isNotNull();
+    }
+
+    @Test
+    void getTodayStatus_noLogAtAll_returnsNull() {
+        when(attendanceLogRepository
+                .findFirstByUserAccountUserNameIgnoreCaseAndDateOfLogAndCheckOutTimeIsNullOrderByCheckInTimeDesc(
+                        "john", LocalDate.now()))
+                .thenReturn(Optional.empty());
+        when(attendanceLogRepository
+                .findFirstByUserAccountUserNameIgnoreCaseAndDateOfLogOrderByCheckInTimeDesc(
+                        "john", LocalDate.now()))
+                .thenReturn(Optional.empty());
 
         AttendanceLogDto result = attendanceLogService.getTodayStatus("john");
 
         assertThat(result).isNull();
     }
 
+    // ── getAllLogs ────────────────────────────────────────────────────────────
 
     @Test
     void getAllLogs_returnsMappedList() {
@@ -131,11 +181,10 @@ class AttendanceLogServiceImplTest {
     void getAllLogs_empty_returnsEmptyList() {
         when(attendanceLogRepository.findAll()).thenReturn(List.of());
 
-        List<AttendanceLogDto> result = attendanceLogService.getAllLogs();
-
-        assertThat(result).isEmpty();
+        assertThat(attendanceLogService.getAllLogs()).isEmpty();
     }
 
+    // ── getLogsByUser ─────────────────────────────────────────────────────────
 
     @Test
     void getLogsByUser_returnsLogsForUser() {
@@ -151,11 +200,10 @@ class AttendanceLogServiceImplTest {
     void getLogsByUser_noLogs_returnsEmptyList() {
         when(attendanceLogRepository.findByUserName("john")).thenReturn(List.of());
 
-        List<AttendanceLogDto> result = attendanceLogService.getLogsByUser("john");
-
-        assertThat(result).isEmpty();
+        assertThat(attendanceLogService.getLogsByUser("john")).isEmpty();
     }
 
+    // ── getLogsByDate ─────────────────────────────────────────────────────────
 
     @Test
     void getLogsByDate_returnsLogsForDate() {
@@ -170,22 +218,17 @@ class AttendanceLogServiceImplTest {
 
     @Test
     void getLogsByDate_noLogs_returnsEmptyList() {
-        String date = "2026-01-01";
         when(attendanceLogRepository.findByDate(LocalDate.of(2026, 1, 1))).thenReturn(List.of());
 
-        List<AttendanceLogDto> result = attendanceLogService.getLogsByDate(date);
-
-        assertThat(result).isEmpty();
+        assertThat(attendanceLogService.getLogsByDate("2026-01-01")).isEmpty();
     }
 
     @Test
     void getLogsByDate_multipleLogs_returnsAll() {
         AttendanceLog log2 = new AttendanceLog(userAccount, Instant.now(), LocalDate.now());
-        String today = LocalDate.now().toString();
         when(attendanceLogRepository.findByDate(LocalDate.now())).thenReturn(List.of(attendanceLog, log2));
 
-        List<AttendanceLogDto> result = attendanceLogService.getLogsByDate(today);
-
-        assertThat(result).hasSize(2);
+        assertThat(attendanceLogService.getLogsByDate(LocalDate.now().toString())).hasSize(2);
     }
 }
+        

@@ -11,12 +11,14 @@ import com.cresensolutions.userservice.dto.ResetPasswordWithOtpRequest;
 import com.cresensolutions.userservice.dto.RoleSummaryResponse;
 import com.cresensolutions.userservice.exception.AuthenticationFailedException;
 import com.cresensolutions.userservice.exception.ResourceNotFoundException;
+import com.cresensolutions.userservice.messaging.UserEventPublisher;
 import com.cresensolutions.userservice.model.Role;
 import com.cresensolutions.userservice.model.UserAccount;
 import com.cresensolutions.userservice.repository.RoleRepository;
 import com.cresensolutions.userservice.repository.UserRepository;
 import com.cresensolutions.userservice.service.*;
 import com.cresensolutions.userservice.validation.PasswordUtils;
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,6 +45,7 @@ public class AuthServiceImpl implements AuthService {
     private final OtpService otpService;
     private final EmailService emailService;
     private final PasswordEncoder passwordEncoder;
+    private final UserEventPublisher eventPublisher;
 
     public AuthServiceImpl(
             RoleRepository roleRepository,
@@ -51,7 +54,8 @@ public class AuthServiceImpl implements AuthService {
             AuthenticationAuditService authenticationAuditService,
             OtpService otpService,
             EmailService emailService,
-            PasswordEncoder passwordEncoder
+            PasswordEncoder passwordEncoder,
+            UserEventPublisher eventPublisher
     ) {
         this.roleRepository = roleRepository;
         this.userRepository = userRepository;
@@ -60,10 +64,12 @@ public class AuthServiceImpl implements AuthService {
         this.otpService = otpService;
         this.emailService = emailService;
         this.passwordEncoder = passwordEncoder;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
     @Transactional
+    @RateLimiter(name = "login-rl")
     public LoginResponse login(LoginRequest request) {
         String loginValue = normalize(request.username());
         UserAccount user = userRepository.findByUserNameIgnoreCaseOrEmailIdIgnoreCase(loginValue, loginValue)
@@ -77,12 +83,13 @@ public class AuthServiceImpl implements AuthService {
         }
 
         user.setLastLogin(Instant.now());
-        TransactionUtils.runAfterCommit(() -> authenticationAuditService.logLoginSuccess(user.getUsername()));
+        TransactionUtils.runAfterCommit(() -> eventPublisher.publishLoginSuccess(user.getUsername()));
         return toLoginResponse(user, "Login successful");
     }
 
     @Override
     @Transactional
+    @RateLimiter(name = "otp-request-rl")
     public OtpResponse requestPasswordResetOtp(OtpRequest request) {
         String email = normalize(request.email());
         UserAccount user = userRepository.findByEmailIdIgnoreCase(email)
@@ -91,11 +98,12 @@ public class AuthServiceImpl implements AuthService {
         ensureActiveUser(user);
 
         String otp = otpService.createOtp(user);
-        TransactionUtils.runAfterCommit(() -> emailService.sendPasswordResetOtp(user.getEmail(), user.getFullName(), otp));
+        TransactionUtils.runAfterCommit(() -> eventPublisher.publishOtpRequested(user.getEmail(), user.getFullName(), otp));
         return new OtpResponse("OTP sent to your email address.");
     }
 
     @Override
+    @RateLimiter(name = "otp-verify-rl")
     public OtpResponse verifyPasswordResetOtp(OtpValidationRequest request) {
         String email = normalize(request.email());
         UserAccount user = userRepository.findByEmailIdIgnoreCase(email)
@@ -108,6 +116,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
+    @RateLimiter(name = "otp-verify-rl")
     public LoginResponse resetPassword(ResetPasswordWithOtpRequest request) {
         String email = normalize(request.email());
         UserAccount user = loadActiveUserByEmail(email);
@@ -117,7 +126,7 @@ public class AuthServiceImpl implements AuthService {
         otpService.validateOtp(user, request.otp());
         user.setPassword(passwordEncoder.encode(decodedPassword));
         otpService.clearOtp(user);
-        TransactionUtils.runAfterCommit(() -> authenticationAuditService.logPasswordReset(email));
+        TransactionUtils.runAfterCommit(() -> eventPublisher.publishPasswordReset(email));
         return toLoginResponse(user, "Password reset successful");
     }
 
@@ -148,7 +157,7 @@ public class AuthServiceImpl implements AuthService {
     }
 
     private AuthenticationFailedException failedLogin(String loginValue) {
-        authenticationAuditService.logLoginFailure(loginValue);
+        eventPublisher.publishLoginFailed(loginValue);
         return new AuthenticationFailedException("Invalid username or password");
     }
 

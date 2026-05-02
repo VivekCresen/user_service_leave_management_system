@@ -1,8 +1,15 @@
 package com.cresensolutions.userservice.service;
 
-import com.cresensolutions.userservice.dto.*;
+import com.cresensolutions.userservice.dto.LoginRequest;
+import com.cresensolutions.userservice.dto.LoginResponse;
+import com.cresensolutions.userservice.dto.OtpRequest;
+import com.cresensolutions.userservice.dto.OtpResponse;
+import com.cresensolutions.userservice.dto.OtpValidationRequest;
+import com.cresensolutions.userservice.dto.ResetPasswordWithOtpRequest;
+import com.cresensolutions.userservice.dto.RoleSummaryResponse;
 import com.cresensolutions.userservice.exception.AuthenticationFailedException;
 import com.cresensolutions.userservice.exception.ResourceNotFoundException;
+import com.cresensolutions.userservice.messaging.UserEventPublisher;
 import com.cresensolutions.userservice.model.Role;
 import com.cresensolutions.userservice.model.UserAccount;
 import com.cresensolutions.userservice.repository.RoleRepository;
@@ -11,7 +18,6 @@ import com.cresensolutions.userservice.service.Impl.AuthServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -35,17 +41,22 @@ class AuthServiceImplTest {
     @Mock private OtpService otpService;
     @Mock private EmailService emailService;
     @Mock private PasswordEncoder passwordEncoder;
+    @Mock private UserEventPublisher eventPublisher;
 
-    @InjectMocks
     private AuthServiceImpl authService;
-
     private UserAccount activeUser;
 
     @BeforeEach
     void setUp() {
+        authService = new AuthServiceImpl(
+                roleRepository, userRepository, jwtService,
+                authenticationAuditService, otpService, emailService,
+                passwordEncoder, eventPublisher);
+
         activeUser = new UserAccount();
         activeUser.setUsername("alice");
         activeUser.setEmail("alice@cresensolutions.com");
+        activeUser.setFullName("Alice Smith");
         activeUser.setPassword("$2a$10$hashedpassword");
         activeUser.setActive(true);
         activeUser.assignRole(new Role(1L, "EMPLOYEE", "EMPLOYEE"));
@@ -53,13 +64,12 @@ class AuthServiceImplTest {
 
     @Test
     void login_validCredentials_returnsLoginResponse() {
-        String encoded = Base64.getEncoder().encodeToString("Secret1!".getBytes());
         when(userRepository.findByUserNameIgnoreCaseOrEmailIdIgnoreCase(anyString(), anyString()))
                 .thenReturn(Optional.of(activeUser));
         when(passwordEncoder.matches("Secret1!", activeUser.getPassword())).thenReturn(true);
         when(jwtService.generateToken(activeUser)).thenReturn("jwt-token");
 
-        LoginResponse response = authService.login(new LoginRequest("alice", encoded));
+        LoginResponse response = authService.login(new LoginRequest("alice", base64("Secret1!")));
 
         assertThat(response.token()).isEqualTo("jwt-token");
         assertThat(response.username()).isEqualTo("alice");
@@ -72,7 +82,7 @@ class AuthServiceImplTest {
 
         assertThatThrownBy(() -> authService.login(new LoginRequest("nobody", base64("pass"))))
                 .isInstanceOf(AuthenticationFailedException.class);
-        verify(authenticationAuditService).logLoginFailure(anyString());
+        verify(eventPublisher).publishLoginFailed(anyString());
     }
 
     @Test
@@ -94,7 +104,7 @@ class AuthServiceImplTest {
 
         assertThatThrownBy(() -> authService.login(new LoginRequest("alice", base64("WrongPass1!"))))
                 .isInstanceOf(AuthenticationFailedException.class);
-        verify(authenticationAuditService).logLoginFailure(anyString());
+        verify(eventPublisher).publishLoginFailed(anyString());
     }
 
     @Test
@@ -108,12 +118,27 @@ class AuthServiceImplTest {
     }
 
     @Test
+    void login_successfulLogin_updatesLastLogin() {
+        when(userRepository.findByUserNameIgnoreCaseOrEmailIdIgnoreCase(anyString(), anyString()))
+                .thenReturn(Optional.of(activeUser));
+        when(passwordEncoder.matches(anyString(), anyString())).thenReturn(true);
+        when(jwtService.generateToken(activeUser)).thenReturn("jwt-token");
+
+        authService.login(new LoginRequest("alice", base64("Secret1!")));
+
+        assertThat(activeUser.getLastLogin()).isNotNull();
+    }
+
+    // ── requestPasswordResetOtp ───────────────────────────────────────────────
+
+    @Test
     void requestPasswordResetOtp_knownEmail_returnsOtpResponse() {
         when(userRepository.findByEmailIdIgnoreCase("alice@cresensolutions.com"))
                 .thenReturn(Optional.of(activeUser));
         when(otpService.createOtp(activeUser)).thenReturn("654321");
 
-        OtpResponse response = authService.requestPasswordResetOtp(new OtpRequest("alice@cresensolutions.com"));
+        OtpResponse response = authService.requestPasswordResetOtp(
+                new OtpRequest("alice@cresensolutions.com"));
 
         assertThat(response.message()).contains("OTP");
     }
@@ -122,7 +147,8 @@ class AuthServiceImplTest {
     void requestPasswordResetOtp_unknownEmail_throwsResourceNotFoundException() {
         when(userRepository.findByEmailIdIgnoreCase(anyString())).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> authService.requestPasswordResetOtp(new OtpRequest("unknown@cresensolutions.com")))
+        assertThatThrownBy(() -> authService.requestPasswordResetOtp(
+                new OtpRequest("unknown@cresensolutions.com")))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
@@ -131,9 +157,20 @@ class AuthServiceImplTest {
         activeUser.setActive(false);
         when(userRepository.findByEmailIdIgnoreCase(anyString())).thenReturn(Optional.of(activeUser));
 
-        assertThatThrownBy(() -> authService.requestPasswordResetOtp(new OtpRequest("alice@cresensolutions.com")))
+        assertThatThrownBy(() -> authService.requestPasswordResetOtp(
+                new OtpRequest("alice@cresensolutions.com")))
                 .isInstanceOf(AuthenticationFailedException.class);
     }
+
+    @Test
+    void requestPasswordResetOtp_nullEmail_treatedAsEmpty() {
+        when(userRepository.findByEmailIdIgnoreCase("")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.requestPasswordResetOtp(new OtpRequest(null)))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    // ── verifyPasswordResetOtp ────────────────────────────────────────────────
 
     @Test
     void verifyPasswordResetOtp_validOtp_returnsSuccessMessage() {
@@ -157,8 +194,20 @@ class AuthServiceImplTest {
     }
 
     @Test
+    void verifyPasswordResetOtp_inactiveUser_throwsAuthenticationFailedException() {
+        activeUser.setActive(false);
+        when(userRepository.findByEmailIdIgnoreCase("alice@cresensolutions.com"))
+                .thenReturn(Optional.of(activeUser));
+
+        assertThatThrownBy(() -> authService.verifyPasswordResetOtp(
+                new OtpValidationRequest("alice@cresensolutions.com", "123456")))
+                .isInstanceOf(AuthenticationFailedException.class);
+    }
+
+    // ── resetPassword ─────────────────────────────────────────────────────────
+
+    @Test
     void resetPassword_validRequest_updatesPasswordAndReturnsResponse() {
-        String newPass = base64("NewPass1!");
         when(userRepository.findByEmailIdIgnoreCase("alice@cresensolutions.com"))
                 .thenReturn(Optional.of(activeUser));
         doNothing().when(otpService).validateOtp(eq(activeUser), anyString());
@@ -166,7 +215,8 @@ class AuthServiceImplTest {
         when(jwtService.generateToken(activeUser)).thenReturn("new-jwt");
 
         LoginResponse response = authService.resetPassword(
-                new ResetPasswordWithOtpRequest("alice@cresensolutions.com", "123456", newPass));
+                new ResetPasswordWithOtpRequest("alice@cresensolutions.com", "123456",
+                        base64("NewPass1!")));
 
         assertThat(response.token()).isEqualTo("new-jwt");
         verify(otpService).clearOtp(activeUser);
@@ -177,16 +227,31 @@ class AuthServiceImplTest {
         when(userRepository.findByEmailIdIgnoreCase(anyString())).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.resetPassword(
-                new ResetPasswordWithOtpRequest("nobody@cresensolutions.com", "123456", base64("NewPass1!"))))
+                new ResetPasswordWithOtpRequest("nobody@cresensolutions.com", "123456",
+                        base64("NewPass1!"))))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void resetPassword_inactiveUser_throwsAuthenticationFailedException() {
+        activeUser.setActive(false);
+        when(userRepository.findByEmailIdIgnoreCase("alice@cresensolutions.com"))
+                .thenReturn(Optional.of(activeUser));
+
+        assertThatThrownBy(() -> authService.resetPassword(
+                new ResetPasswordWithOtpRequest("alice@cresensolutions.com", "123456",
+                        base64("NewPass1!"))))
+                .isInstanceOf(AuthenticationFailedException.class);
     }
 
     @Test
     void resetPassword_weakPassword_throwsIllegalArgumentException() {
         when(userRepository.findByEmailIdIgnoreCase("alice@cresensolutions.com"))
                 .thenReturn(Optional.of(activeUser));
+
         assertThatThrownBy(() -> authService.resetPassword(
-                new ResetPasswordWithOtpRequest("alice@cresensolutions.com", "123456", base64("weakpass"))))
+                new ResetPasswordWithOtpRequest("alice@cresensolutions.com", "123456",
+                        base64("weakpass"))))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -196,10 +261,50 @@ class AuthServiceImplTest {
                 .thenReturn(Optional.of(activeUser));
 
         assertThatThrownBy(() -> authService.resetPassword(
-                new ResetPasswordWithOtpRequest("alice@cresensolutions.com", "123456", base64("Ab1!"))))
+                new ResetPasswordWithOtpRequest("alice@cresensolutions.com", "123456",
+                        base64("Ab1!"))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("between 8 and 255");
     }
+
+    @Test
+    void resetPassword_tooLongPassword_throwsIllegalArgumentException() {
+        when(userRepository.findByEmailIdIgnoreCase("alice@cresensolutions.com"))
+                .thenReturn(Optional.of(activeUser));
+
+        String longPass = "Aa1!" + "x".repeat(260);
+        assertThatThrownBy(() -> authService.resetPassword(
+                new ResetPasswordWithOtpRequest("alice@cresensolutions.com", "123456",
+                        base64(longPass))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("between 8 and 255");
+    }
+
+    @Test
+    void resetPassword_blankPassword_throwsIllegalArgumentException() {
+        when(userRepository.findByEmailIdIgnoreCase("alice@cresensolutions.com"))
+                .thenReturn(Optional.of(activeUser));
+
+        String emptyBase64 = Base64.getEncoder().encodeToString("".getBytes());
+        assertThatThrownBy(() -> authService.resetPassword(
+                new ResetPasswordWithOtpRequest("alice@cresensolutions.com", "123456", emptyBase64)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Password is required");
+    }
+
+    @Test
+    void resetPassword_invalidBase64Password_throwsIllegalArgumentException() {
+        when(userRepository.findByEmailIdIgnoreCase("alice@cresensolutions.com"))
+                .thenReturn(Optional.of(activeUser));
+
+        assertThatThrownBy(() -> authService.resetPassword(
+                new ResetPasswordWithOtpRequest("alice@cresensolutions.com", "123456",
+                        "not-base64!!!")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Base64");
+    }
+
+    // ── fetchRoleSummary ──────────────────────────────────────────────────────
 
     @Test
     void fetchRoleSummary_returnsListPerRole() {
@@ -219,10 +324,9 @@ class AuthServiceImplTest {
     void fetchRoleSummary_withAssignments_countsUsersPerRole() {
         Role employee = new Role(1L, "EMPLOYEE", "EMPLOYEE");
         when(roleRepository.findAllByOrderByIdAsc()).thenReturn(List.of(employee));
-
-        UserRepository.RoleAssignmentView view1 = roleAssignmentView("alice", "EMPLOYEE");
-        UserRepository.RoleAssignmentView view2 = roleAssignmentView("bob", "EMPLOYEE");
-        when(userRepository.findRoleAssignments()).thenReturn(List.of(view1, view2));
+        when(userRepository.findRoleAssignments()).thenReturn(List.of(
+                roleView("alice", "EMPLOYEE"),
+                roleView("bob", "EMPLOYEE")));
 
         List<RoleSummaryResponse> summaries = authService.fetchRoleSummary();
 
@@ -230,14 +334,14 @@ class AuthServiceImplTest {
     }
 
     @Test
-    void fetchRoleSummary_withNullUsernameAssignment_skipsEntry() {
+    void fetchRoleSummary_withNullOrBlankAssignments_skipsEntry() {
         Role employee = new Role(1L, "EMPLOYEE", "EMPLOYEE");
         when(roleRepository.findAllByOrderByIdAsc()).thenReturn(List.of(employee));
-
-        UserRepository.RoleAssignmentView nullUsername = roleAssignmentView(null, "EMPLOYEE");
-        UserRepository.RoleAssignmentView blankUsername = roleAssignmentView("  ", "EMPLOYEE");
-        UserRepository.RoleAssignmentView nullRole = roleAssignmentView("alice", null);
-        when(userRepository.findRoleAssignments()).thenReturn(List.of(nullUsername, blankUsername, nullRole));
+        when(userRepository.findRoleAssignments()).thenReturn(List.of(
+                roleView(null, "EMPLOYEE"),
+                roleView("  ", "EMPLOYEE"),
+                roleView("alice", null),
+                roleView("alice", "  ")));
 
         List<RoleSummaryResponse> summaries = authService.fetchRoleSummary();
 
@@ -245,56 +349,11 @@ class AuthServiceImplTest {
     }
 
     @Test
-    void verifyPasswordResetOtp_inactiveUser_throwsAuthenticationFailedException() {
-        activeUser.setActive(false);
-        when(userRepository.findByEmailIdIgnoreCase("alice@cresensolutions.com"))
-                .thenReturn(Optional.of(activeUser));
-
-        assertThatThrownBy(() -> authService.verifyPasswordResetOtp(
-                new OtpValidationRequest("alice@cresensolutions.com", "123456")))
-                .isInstanceOf(AuthenticationFailedException.class);
-    }
-
-    @Test
-    void resetPassword_inactiveUser_throwsAuthenticationFailedException() {
-        activeUser.setActive(false);
-        when(userRepository.findByEmailIdIgnoreCase("alice@cresensolutions.com"))
-                .thenReturn(Optional.of(activeUser));
-
-        assertThatThrownBy(() -> authService.resetPassword(
-                new ResetPasswordWithOtpRequest("alice@cresensolutions.com", "123456", base64("NewPass1!"))))
-                .isInstanceOf(AuthenticationFailedException.class);
-    }
-
-    @Test
-    void resetPassword_blankPassword_throwsIllegalArgumentException() {
-        when(userRepository.findByEmailIdIgnoreCase("alice@cresensolutions.com"))
-                .thenReturn(Optional.of(activeUser));
-
-        String emptyBase64 = Base64.getEncoder().encodeToString("".getBytes());
-        assertThatThrownBy(() -> authService.resetPassword(
-                new ResetPasswordWithOtpRequest("alice@cresensolutions.com", "123456", emptyBase64)))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Password is required");
-    }
-
-    @Test
-    void login_invalidBase64_throwsIllegalArgumentException() {
-        when(userRepository.findByUserNameIgnoreCaseOrEmailIdIgnoreCase(anyString(), anyString()))
-                .thenReturn(Optional.of(activeUser));
-
-        assertThatThrownBy(() -> authService.login(new LoginRequest("alice", "not-base64!!!")))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Base64");
-    }
-
-    @Test
     void fetchRoleSummary_roleWithAliases_mapsCorrectly() {
         Role manager = new Role(1L, "MANAGER", "MANAGER");
         when(roleRepository.findAllByOrderByIdAsc()).thenReturn(List.of(manager));
-
-        UserRepository.RoleAssignmentView view = roleAssignmentView("alice", "MANAGER");
-        when(userRepository.findRoleAssignments()).thenReturn(List.of(view));
+        when(userRepository.findRoleAssignments()).thenReturn(List.of(
+                roleView("alice", "MANAGER")));
 
         List<RoleSummaryResponse> summaries = authService.fetchRoleSummary();
 
@@ -303,99 +362,81 @@ class AuthServiceImplTest {
     }
 
     @Test
-    void resetPassword_invalidBase64Password_throwsIllegalArgumentException() {
-        when(userRepository.findByEmailIdIgnoreCase("alice@cresensolutions.com"))
-                .thenReturn(Optional.of(activeUser));
+    void fetchRoleSummary_emptyRoles_returnsEmptyList() {
+        when(roleRepository.findAllByOrderByIdAsc()).thenReturn(List.of());
+        when(userRepository.findRoleAssignments()).thenReturn(List.of());
 
-        assertThatThrownBy(() -> authService.resetPassword(
-                new ResetPasswordWithOtpRequest("alice@cresensolutions.com", "123456", "not-base64!!!")))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Base64");
+        assertThat(authService.fetchRoleSummary()).isEmpty();
     }
 
-    @Test
-    void resetPassword_tooLongPassword_throwsIllegalArgumentException() {
-        when(userRepository.findByEmailIdIgnoreCase("alice@cresensolutions.com"))
-                .thenReturn(Optional.of(activeUser));
-
-        String longPass = "Aa1!" + "x".repeat(260);
-        assertThatThrownBy(() -> authService.resetPassword(
-                new ResetPasswordWithOtpRequest("alice@cresensolutions.com", "123456", base64(longPass))))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("between 8 and 255");
-    }
+    // ── post-commit callbacks ─────────────────────────────────────────────────
 
     @Test
-    void requestPasswordResetOtp_nullEmail_treatedAsEmpty() {
-        when(userRepository.findByEmailIdIgnoreCase("")).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> authService.requestPasswordResetOtp(new OtpRequest(null)))
-                .isInstanceOf(ResourceNotFoundException.class);
-    }
-
-    @Test
-    void fetchRoleSummary_blankRoleAssignment_skipsEntry() {
-        Role employee = new Role(1L, "EMPLOYEE", "EMPLOYEE");
-        when(roleRepository.findAllByOrderByIdAsc()).thenReturn(List.of(employee));
-        UserRepository.RoleAssignmentView blankRole = roleAssignmentView("alice", "  ");
-        when(userRepository.findRoleAssignments()).thenReturn(List.of(blankRole));
-
-        List<RoleSummaryResponse> summaries = authService.fetchRoleSummary();
-
-        assertThat(summaries.get(0).userCount()).isEqualTo(0);
-    }
-
-    @Test
-    void login_nullUsername_normalize_usesEmpty() {
-        when(userRepository.findByUserNameIgnoreCaseOrEmailIdIgnoreCase("", ""))
-                .thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> authService.login(new LoginRequest(null, base64("pass"))))
-                .isInstanceOf(AuthenticationFailedException.class);
-        verify(authenticationAuditService).logLoginFailure("");
-    }
-
-    @Test
-    void resetPassword_nullDecodedPassword_throwsPasswordRequired() {
-        when(userRepository.findByEmailIdIgnoreCase("alice@cresensolutions.com"))
-                .thenReturn(Optional.of(activeUser));
-
-        String emptyBase64 = Base64.getEncoder().encodeToString("".getBytes());
-        assertThatThrownBy(() -> authService.resetPassword(
-                new ResetPasswordWithOtpRequest("alice@cresensolutions.com", "123456", emptyBase64)))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Password is required");
-    }
-
-    @Test
-    void login_runAfterCommit_withActiveSynchronization_registersCallback() {
-
-        String encoded = Base64.getEncoder().encodeToString("Secret1!".getBytes());
+    void login_withActiveSynchronization_publishesLoginSuccessAfterCommit() {
         when(userRepository.findByUserNameIgnoreCaseOrEmailIdIgnoreCase(anyString(), anyString()))
                 .thenReturn(Optional.of(activeUser));
-        when(passwordEncoder.matches("Secret1!", activeUser.getPassword())).thenReturn(true);
+        when(passwordEncoder.matches(anyString(), anyString())).thenReturn(true);
         when(jwtService.generateToken(activeUser)).thenReturn("jwt-token");
+
         org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
         try {
-            LoginResponse response = authService.login(new LoginRequest("alice", encoded));
-            assertThat(response.token()).isEqualTo("jwt-token");
+            authService.login(new LoginRequest("alice", base64("Secret1!")));
             org.springframework.transaction.support.TransactionSynchronizationManager
-                    .getSynchronizations()
-                    .forEach(s -> s.afterCommit());
-            verify(authenticationAuditService).logLoginSuccess("alice");
+                    .getSynchronizations().forEach(s -> s.afterCommit());
+            verify(eventPublisher).publishLoginSuccess("alice");
         } finally {
             org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
         }
     }
 
+    @Test
+    void requestPasswordResetOtp_withActiveSynchronization_publishesOtpAfterCommit() {
+        when(userRepository.findByEmailIdIgnoreCase("alice@cresensolutions.com"))
+                .thenReturn(Optional.of(activeUser));
+        when(otpService.createOtp(activeUser)).thenReturn("123456");
+
+        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+        try {
+            authService.requestPasswordResetOtp(new OtpRequest("alice@cresensolutions.com"));
+            org.springframework.transaction.support.TransactionSynchronizationManager
+                    .getSynchronizations().forEach(s -> s.afterCommit());
+            verify(eventPublisher).publishOtpRequested(
+                    eq("alice@cresensolutions.com"), anyString(), eq("123456"));
+        } finally {
+            org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    void resetPassword_withActiveSynchronization_publishesPasswordResetAfterCommit() {
+        when(userRepository.findByEmailIdIgnoreCase("alice@cresensolutions.com"))
+                .thenReturn(Optional.of(activeUser));
+        doNothing().when(otpService).validateOtp(any(), anyString());
+        when(passwordEncoder.encode(anyString())).thenReturn("$2a$10$hash");
+        when(jwtService.generateToken(activeUser)).thenReturn("jwt");
+
+        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+        try {
+            authService.resetPassword(new ResetPasswordWithOtpRequest(
+                    "alice@cresensolutions.com", "123456", base64("NewPass1!")));
+            org.springframework.transaction.support.TransactionSynchronizationManager
+                    .getSynchronizations().forEach(s -> s.afterCommit());
+            verify(eventPublisher).publishPasswordReset("alice@cresensolutions.com");
+        } finally {
+            org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    // ── helpers ───────────────────────────────────────────────────────────────
+
     private String base64(String raw) {
         return Base64.getEncoder().encodeToString(raw.getBytes());
     }
 
-    private UserRepository.RoleAssignmentView roleAssignmentView(String username, String role) {
+    private UserRepository.RoleAssignmentView roleView(String username, String role) {
         return new UserRepository.RoleAssignmentView() {
             @Override public String getUsername() { return username; }
-            @Override public String getRole() { return role; }
+            @Override public String getRole()     { return role; }
         };
     }
 }

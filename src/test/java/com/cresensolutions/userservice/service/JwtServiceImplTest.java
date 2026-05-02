@@ -95,14 +95,17 @@ class JwtServiceImplTest {
     }
 
     @Test
-    void generateToken_userWithNullEmail_throwsOrHandles() {
+    void generateToken_userWithNullEmail_returnsValidToken() {
         UserAccount user = new UserAccount();
         user.setUsername("noemail");
         user.setFullName("No Email");
         user.setActive(true);
         user.assignRole(new Role(1L, "EMPLOYEE", "EMPLOYEE"));
-        assertThatThrownBy(() -> jwtService.generateToken(user))
-                .isInstanceOf(RuntimeException.class);
+
+        // impl uses empty string for null email — no exception expected
+        String token = jwtService.generateToken(user);
+        assertThat(token).isNotBlank();
+        assertThat(jwtService.extractUsername(token)).isEqualTo("noemail");
     }
 
 

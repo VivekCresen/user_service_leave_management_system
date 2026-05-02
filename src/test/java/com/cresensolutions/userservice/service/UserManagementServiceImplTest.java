@@ -3,6 +3,7 @@ package com.cresensolutions.userservice.service;
 import com.cresensolutions.userservice.dto.*;
 import com.cresensolutions.userservice.exception.ResourceNotFoundException;
 import com.cresensolutions.userservice.dto.UpdateProfileRequest;
+import com.cresensolutions.userservice.messaging.UserEventPublisher;
 import com.cresensolutions.userservice.model.Role;
 import com.cresensolutions.userservice.model.UserAccount;
 import com.cresensolutions.userservice.repository.CountryRepository;
@@ -38,7 +39,8 @@ class UserManagementServiceImplTest {
     @Mock private MailProperties mailProperties;
     @Mock private CountryRepository countryRepository;
     @Mock private PhoneCodeRepository phoneCodeRepository;
- private final Executor syncExecutor = Runnable::run;
+    @Mock private UserEventPublisher eventPublisher;
+    private final Executor syncExecutor = Runnable::run;
 
     private UserManagementServiceImpl service;
 
@@ -53,7 +55,7 @@ class UserManagementServiceImplTest {
     void setUp() {
         service = new UserManagementServiceImpl(
                 userRepository, roleRepository, countryRepository, phoneCodeRepository, passwordEncoder,
-                emailService, mailProperties, syncExecutor);
+                emailService, mailProperties, syncExecutor, eventPublisher);
 
         adminRole    = new Role(1L, "ADMIN",    "ADMIN");
         managerRole  = new Role(2L, "MANAGER",  "MANAGER");
@@ -331,7 +333,7 @@ class UserManagementServiceImplTest {
 
         service.updateUser(10L, req);
 
-        verify(emailService).sendUserRoleChangedEmail(
+        verify(eventPublisher).publishRoleChanged(
                 anyString(), anyString(), anyString(),
                 anyString(), anyString(), anyString(), anyString(), anyString());
     }
@@ -401,7 +403,7 @@ class UserManagementServiceImplTest {
         service.deleteUser(10L, "admin");
 
         verify(userRepository).delete(target);
-        verify(emailService).sendUserDeletedEmail(
+        verify(eventPublisher).publishUserDeleted(
                 anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
     }
 
@@ -1539,7 +1541,7 @@ class UserManagementServiceImplTest {
             org.springframework.transaction.support.TransactionSynchronizationManager
                     .getSynchronizations()
                     .forEach(s -> s.afterCommit());
-            verify(emailService).sendUserDeletedEmail(
+            verify(eventPublisher).publishUserDeleted(
                     anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
         } finally {
             org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
@@ -1568,7 +1570,7 @@ class UserManagementServiceImplTest {
             org.springframework.transaction.support.TransactionSynchronizationManager
                     .getSynchronizations()
                     .forEach(s -> s.afterCommit());
-            verify(emailService).sendNewUserCreatedEmail(
+            verify(eventPublisher).publishUserCreated(
                     anyString(), anyString(), any(), anyString(), anyString(), anyString(), anyString());
         } finally {
             org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();

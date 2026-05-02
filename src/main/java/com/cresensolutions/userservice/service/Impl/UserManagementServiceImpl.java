@@ -17,6 +17,7 @@ import com.cresensolutions.userservice.repository.UserRepository;
 import com.cresensolutions.userservice.common.StringUtils;
 import com.cresensolutions.userservice.common.TransactionUtils;
 import com.cresensolutions.userservice.common.UserConstants;
+import com.cresensolutions.userservice.messaging.UserEventPublisher;
 import com.cresensolutions.userservice.service.EmailService;
 import com.cresensolutions.userservice.service.MailProperties;
 import com.cresensolutions.userservice.service.UserManagementService;
@@ -50,6 +51,7 @@ public class UserManagementServiceImpl implements UserManagementService {
     private final EmailService emailService;
     private final MailProperties mailProperties;
     private final Executor dashboardTaskExecutor;
+    private final UserEventPublisher eventPublisher;
 
     public UserManagementServiceImpl(
             UserRepository userRepository,
@@ -59,7 +61,8 @@ public class UserManagementServiceImpl implements UserManagementService {
             PasswordEncoder passwordEncoder,
             EmailService emailService,
             MailProperties mailProperties,
-            @Qualifier("dashboardTaskExecutor") Executor dashboardTaskExecutor
+            @Qualifier("dashboardTaskExecutor") Executor dashboardTaskExecutor,
+            UserEventPublisher eventPublisher
     ) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
@@ -69,6 +72,7 @@ public class UserManagementServiceImpl implements UserManagementService {
         this.emailService = emailService;
         this.mailProperties = mailProperties;
         this.dashboardTaskExecutor = dashboardTaskExecutor;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -138,7 +142,7 @@ public class UserManagementServiceImpl implements UserManagementService {
 
         UserAccount savedUser = userRepository.save(user);
         log.info("User {} created by {} with role {}", savedUser.getUsername(), actor.getUsername(), savedUser.getRole());
-        TransactionUtils.runAfterCommit(() -> emailService.sendNewUserCreatedEmail(
+        TransactionUtils.runAfterCommit(() -> eventPublisher.publishUserCreated(
                 savedUser.getEmail(),
                 savedUser.getFullName(),
                 savedUser.getId(),
@@ -190,7 +194,7 @@ public class UserManagementServiceImpl implements UserManagementService {
         UserAccount updatedUser = target;
         log.info("User {} updated by {}", updatedUser.getUsername(), actor.getUsername());
         if (roleChangedByAdmin) {
-            TransactionUtils.runAfterCommit(() -> emailService.sendUserRoleChangedEmail(
+            TransactionUtils.runAfterCommit(() -> eventPublisher.publishRoleChanged(
                     updatedUser.getEmail(),
                     updatedUser.getFullName(),
                     updatedUser.getUsername(),
@@ -243,7 +247,7 @@ public class UserManagementServiceImpl implements UserManagementService {
         String deletedUserRole = target.getRole();
         userRepository.delete(target);
         log.info("User {} deleted by {}", target.getUsername(), actor.getUsername());
-        TransactionUtils.runAfterCommit(() -> emailService.sendUserDeletedEmail(
+        TransactionUtils.runAfterCommit(() -> eventPublisher.publishUserDeleted(
                 deletedUserEmail,
                 deletedUserFullName,
                 deletedUserUsername,

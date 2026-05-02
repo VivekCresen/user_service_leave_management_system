@@ -1,6 +1,8 @@
 spring:
   application:
     name: user-service
+  liquibase:
+    enabled: false
   config:
     import: optional:configserver:http://localhost:8888
   datasource:
@@ -35,6 +37,20 @@ spring:
           auth: true
           starttls:
             enable: true
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: /
+    listener:
+      simple:
+        acknowledge-mode: auto
+        retry:
+          enabled: true
+          initial-interval: 2000
+          max-attempts: 3
+          multiplier: 2.0
 
 server:
   port: 8081
@@ -72,7 +88,59 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,circuitbreakers,ratelimiters
+  health:
+    circuitbreakers:
+      enabled: true
+    ratelimiters:
+      enabled: true
+
+# ── Resilience4j ──────────────────────────────────────────────────────────────
+resilience4j:
+
+  ratelimiter:
+    instances:
+      # Login: max 10 attempts per 10 seconds per instance — brute-force protection
+      login-rl:
+        limit-for-period: 10
+        limit-refresh-period: 10s
+        timeout-duration: 0s
+        register-health-indicator: true
+      # OTP request: max 3 per minute — stops OTP spam / email bombing
+      otp-request-rl:
+        limit-for-period: 3
+        limit-refresh-period: 1m
+        timeout-duration: 0s
+        register-health-indicator: true
+      # OTP verify + password reset: max 5 per minute — stops OTP brute-force
+      otp-verify-rl:
+        limit-for-period: 5
+        limit-refresh-period: 1m
+        timeout-duration: 0s
+        register-health-indicator: true
+
+  circuitbreaker:
+    instances:
+      # SMTP: open after 3 failures in 5 calls — mail server can go down
+      smtp-cb:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 5
+        failure-rate-threshold: 60
+        slow-call-duration-threshold: 10s
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 2
+        automatic-transition-from-open-to-half-open-enabled: true
+        register-health-indicator: true
+
+  retry:
+    instances:
+      # SMTP: retry once after 2s on transient mail errors
+      smtp-retry:
+        max-attempts: 2
+        wait-duration: 2s
+        retry-exceptions:
+          - org.springframework.mail.MailException
+          - jakarta.mail.MessagingException
 
 springdoc:
   api-docs:

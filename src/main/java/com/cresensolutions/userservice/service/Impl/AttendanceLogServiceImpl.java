@@ -2,6 +2,7 @@ package com.cresensolutions.userservice.service.Impl;
 
 import com.cresensolutions.userservice.dto.AttendanceLogDto;
 import com.cresensolutions.userservice.exception.ResourceNotFoundException;
+import com.cresensolutions.userservice.messaging.UserEventPublisher;
 import com.cresensolutions.userservice.model.AttendanceLog;
 import com.cresensolutions.userservice.model.UserAccount;
 import com.cresensolutions.userservice.repository.AttendanceLogRepository;
@@ -20,10 +21,14 @@ public class AttendanceLogServiceImpl implements AttendanceLogService {
 
     private final AttendanceLogRepository attendanceLogRepository;
     private final UserRepository userRepository;
+    private final UserEventPublisher eventPublisher;
 
-    public AttendanceLogServiceImpl(AttendanceLogRepository attendanceLogRepository, UserRepository userRepository) {
+    public AttendanceLogServiceImpl(AttendanceLogRepository attendanceLogRepository,
+                                    UserRepository userRepository,
+                                    UserEventPublisher eventPublisher) {
         this.attendanceLogRepository = attendanceLogRepository;
         this.userRepository = userRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -44,6 +49,7 @@ public class AttendanceLogServiceImpl implements AttendanceLogService {
             log = attendanceLogRepository.save(log);
         }
 
+        eventPublisher.publishAttendanceCheckin(username, today);
         return mapToDto(log);
     }
 
@@ -58,6 +64,7 @@ public class AttendanceLogServiceImpl implements AttendanceLogService {
         log.setCheckOutTime(Instant.now());
         log = attendanceLogRepository.save(log);
 
+        eventPublisher.publishAttendanceCheckout(username, today);
         return mapToDto(log);
     }
 

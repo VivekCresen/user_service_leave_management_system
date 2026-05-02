@@ -1,7 +1,6 @@
 package com.cresensolutions.userservice.sse;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -10,10 +9,10 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+@Slf4j
 @Service
 public class SseEmitterService {
 
-    private static final Logger log = LoggerFactory.getLogger(SseEmitterService.class);
     private static final long EMITTER_TIMEOUT_MS = 5 * 60 * 1000L; // 5 minutes
 
     private final Map<String, SseEmitter> emitters = new ConcurrentHashMap<>();

@@ -6,6 +6,8 @@ import com.cresensolutions.userservice.model.EmailTemplate;
 import com.cresensolutions.userservice.repository.EmailTemplateRepository;
 import com.cresensolutions.userservice.service.EmailService;
 import com.cresensolutions.userservice.service.MailProperties;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import lombok.extern.slf4j.Slf4j;
@@ -38,6 +40,8 @@ public class EmailServiceImpl implements EmailService {
 
     @Override
     @Async("auditTaskExecutor")
+    @CircuitBreaker(name = "smtp-cb", fallbackMethod = "logEmailFallback")
+    @Retry(name = "smtp-retry")
     public void sendPasswordResetOtp(String email, String fullName, String otp) {
         sendTemplatedEmail(UserConstants.TMPL_PASSWORD_RESET, email, "Password Reset Request",
                 Map.of("fullName", safe(fullName),
@@ -47,6 +51,8 @@ public class EmailServiceImpl implements EmailService {
 
     @Override
     @Async("auditTaskExecutor")
+    @CircuitBreaker(name = "smtp-cb", fallbackMethod = "logEmailFallbackWithUserId")
+    @Retry(name = "smtp-retry")
     public void sendNewUserCreatedEmail(String email, String fullName, Long userId,
             String companyId, String username, String role, String forgotPasswordLink) {
         String resetLink = (forgotPasswordLink == null || forgotPasswordLink.isBlank())
@@ -62,6 +68,8 @@ public class EmailServiceImpl implements EmailService {
 
     @Override
     @Async("auditTaskExecutor")
+    @CircuitBreaker(name = "smtp-cb", fallbackMethod = "logEmailFallbackWithRole")
+    @Retry(name = "smtp-retry")
     public void sendUserDeletedEmail(String email, String fullName, String username,
             String role, String deletedByUsername, String deletedByRole) {
         sendTemplatedEmail(UserConstants.TMPL_USER_DELETED, email, "Account Removed",
@@ -74,6 +82,8 @@ public class EmailServiceImpl implements EmailService {
 
     @Override
     @Async("auditTaskExecutor")
+    @CircuitBreaker(name = "smtp-cb", fallbackMethod = "logEmailFallbackWithLoginUrl")
+    @Retry(name = "smtp-retry")
     public void sendUserRoleChangedEmail(String email, String fullName, String username,
             String previousRole, String newRole, String changedByUsername,
             String changedByRole, String loginUrl) {
@@ -173,4 +183,30 @@ public class EmailServiceImpl implements EmailService {
     }
 
     private String safe(String v) { return StringUtils.safe(v); }
+
+    // ── Circuit breaker fallbacks (one per method signature) ─────────────────
+
+    @SuppressWarnings("unused")
+    private void logEmailFallback(String email, String fullName, String otp, Throwable t) {
+        log.error("[EmailService] SMTP circuit open — could not send password reset OTP to {}: {}", email, t.getMessage());
+    }
+
+    @SuppressWarnings("unused")
+    private void logEmailFallbackWithUserId(String email, String fullName, Long userId,
+            String companyId, String username, String role, String forgotPasswordLink, Throwable t) {
+        log.error("[EmailService] SMTP circuit open — could not send new-user email to {}: {}", email, t.getMessage());
+    }
+
+    @SuppressWarnings("unused")
+    private void logEmailFallbackWithRole(String email, String fullName, String username,
+            String role, String deletedByUsername, String deletedByRole, Throwable t) {
+        log.error("[EmailService] SMTP circuit open — could not send user-deleted email to {}: {}", email, t.getMessage());
+    }
+
+    @SuppressWarnings("unused")
+    private void logEmailFallbackWithLoginUrl(String email, String fullName, String username,
+            String previousRole, String newRole, String changedByUsername,
+            String changedByRole, String loginUrl, Throwable t) {
+        log.error("[EmailService] SMTP circuit open — could not send role-changed email to {}: {}", email, t.getMessage());
+    }
 }
