@@ -7,6 +7,7 @@ import com.cresensolutions.userservice.repository.UserRepository;
 import com.cresensolutions.userservice.service.UserExcelService;
 import com.cresensolutions.userservice.service.UserManagementService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -18,6 +19,7 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
+@RequiredArgsConstructor
 @RestController
 @RequestMapping("/api/users/import")
 public class UserExcelImportController {
@@ -29,16 +31,6 @@ public class UserExcelImportController {
     private final UserManagementService userManagementService;
     private final UserRepository        userRepository;
     private final ObjectMapper          objectMapper;
-
-    public UserExcelImportController(UserExcelService excelService,
-                                     UserManagementService userManagementService,
-                                     UserRepository userRepository,
-                                     ObjectMapper objectMapper) {
-        this.excelService         = excelService;
-        this.userManagementService = userManagementService;
-        this.userRepository        = userRepository;
-        this.objectMapper          = objectMapper;
-    }
 
     // ── GET /template ─────────────────────────────────────────────────────────
 

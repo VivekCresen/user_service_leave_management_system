@@ -9,6 +9,7 @@ import com.cresensolutions.userservice.service.UserManagementService;
 import com.cresensolutions.userservice.sse.SseEmitterService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,17 +23,13 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @Validated
+@RequiredArgsConstructor
 @RestController
 @RequestMapping("/api/users")
 public class UserManagementController {
 
     private final UserManagementService userManagementService;
     private final SseEmitterService sseEmitterService;
-
-    public UserManagementController(UserManagementService userManagementService, SseEmitterService sseEmitterService) {
-        this.userManagementService = userManagementService;
-        this.sseEmitterService = sseEmitterService;
-    }
 
     @GetMapping("/dashboard/{actorUsername}")
     public UserDashboardResponse dashboard(@PathVariable String actorUsername) {

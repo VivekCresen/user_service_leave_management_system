@@ -11,9 +11,12 @@ import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import lombok.Getter;
+import lombok.Setter;
 
 import java.time.Instant;
 
+@Getter
 @Entity
 @Table(
         schema = "user_schema",
@@ -30,12 +33,15 @@ public class PasswordResetOtp {
     private Long id;
 
     @Column(name = "email_id", unique = true)
+    @Setter
     private String emailId;
 
     @Column(name = "otp_code")
+    @Setter
     private String otpCode;
 
     @Column(name = "expiry_time")
+    @Setter
     private Instant expiryTime;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -58,40 +64,8 @@ public class PasswordResetOtp {
         this.expiryTime = expiryTime;
     }
 
-    public Long getId() {
-        return id;
-    }
-
-    public String getEmailId() {
-        return emailId;
-    }
-
-    public String getOtpCode() {
-        return otpCode;
-    }
-
-    public Instant getExpiryTime() {
-        return expiryTime;
-    }
-
-    public UserAccount getUser() {
-        return user;
-    }
-
     public Long getUserId() {
         return user == null ? null : user.getId();
-    }
-
-    public void setOtpCode(String otpCode) {
-        this.otpCode = otpCode;
-    }
-
-    public void setExpiryTime(Instant expiryTime) {
-        this.expiryTime = expiryTime;
-    }
-
-    public void setEmailId(String emailId) {
-        this.emailId = emailId;
     }
 
     public void setUser(UserAccount user) {

@@ -2,6 +2,7 @@ package com.cresensolutions.userservice.exception;
 
 import com.cresensolutions.userservice.dto.ApiErrorResponse;
 import jakarta.validation.ConstraintViolationException;
+import org.springframework.context.MessageSource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -13,16 +14,12 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
-import org.springframework.context.MessageSource;
-import org.springframework.context.i18n.LocaleContextHolder;
 
 @RestControllerAdvice
-public class GlobalExceptionHandler {
-
-    private final MessageSource messageSource;
+public class GlobalExceptionHandler extends BaseExceptionHandler {
 
     public GlobalExceptionHandler(MessageSource messageSource) {
-        this.messageSource = messageSource;
+        super(messageSource);
     }
 
     @ExceptionHandler(AuthenticationFailedException.class)
@@ -84,14 +81,5 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiErrorResponse> handleMalformedPayload(HttpMessageNotReadableException exception) {
         return ResponseEntity.badRequest().body(new ApiErrorResponse(translate("Malformed request payload")));
-    }
-
-    private String translate(String message) {
-        if (message == null) return "Unknown error";
-        try {
-            return messageSource.getMessage(message, null, message, LocaleContextHolder.getLocale());
-        } catch (Exception e) {
-            return message;
-        }
     }
 }

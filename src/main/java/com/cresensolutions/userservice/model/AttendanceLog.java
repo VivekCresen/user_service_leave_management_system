@@ -10,10 +10,16 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.time.Instant;
 import java.time.LocalDate;
 
+@Getter
+@Setter
+@NoArgsConstructor
 @Entity
 @Table(schema = "user_schema", name = "user_attendance_log")
 public class AttendanceLog {
@@ -38,56 +44,9 @@ public class AttendanceLog {
     @Column(name = "auto_checked_out", nullable = false)
     private boolean autoCheckedOut = false;
 
-    public AttendanceLog() {
-    }
-
     public AttendanceLog(UserAccount userAccount, Instant checkInTime, LocalDate dateOfLog) {
         this.userAccount = userAccount;
         this.checkInTime = checkInTime;
         this.dateOfLog = dateOfLog;
-    }
-
-    public Long getId() {
-        return id;
-    }
-
-    public UserAccount getUserAccount() {
-        return userAccount;
-    }
-
-    public void setUserAccount(UserAccount userAccount) {
-        this.userAccount = userAccount;
-    }
-
-    public Instant getCheckInTime() {
-        return checkInTime;
-    }
-
-    public void setCheckInTime(Instant checkInTime) {
-        this.checkInTime = checkInTime;
-    }
-
-    public Instant getCheckOutTime() {
-        return checkOutTime;
-    }
-
-    public void setCheckOutTime(Instant checkOutTime) {
-        this.checkOutTime = checkOutTime;
-    }
-
-    public LocalDate getDateOfLog() {
-        return dateOfLog;
-    }
-
-    public void setDateOfLog(LocalDate dateOfLog) {
-        this.dateOfLog = dateOfLog;
-    }
-
-    public boolean isAutoCheckedOut() {
-        return autoCheckedOut;
-    }
-
-    public void setAutoCheckedOut(boolean autoCheckedOut) {
-        this.autoCheckedOut = autoCheckedOut;
     }
 }

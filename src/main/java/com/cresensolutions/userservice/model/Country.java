@@ -6,7 +6,13 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
+@Getter
+@Setter
+@NoArgsConstructor
 @Entity
 @Table(schema = "user_schema", name = "country")
 public class Country {
@@ -23,16 +29,4 @@ public class Country {
 
     @Column(name = "flag_emoji", length = 10)
     private String flagEmoji;
-
-    public Country() {}
-
-    public Long getId() { return id; }
-    public String getName() { return name; }
-    public String getCode() { return code; }
-    public String getFlagEmoji() { return flagEmoji; }
-
-    public void setId(Long id) { this.id = id; }
-    public void setName(String name) { this.name = name; }
-    public void setCode(String code) { this.code = code; }
-    public void setFlagEmoji(String flagEmoji) { this.flagEmoji = flagEmoji; }
 }

@@ -10,7 +10,13 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
+@Getter
+@Setter
+@NoArgsConstructor
 @Entity
 @Table(schema = "user_schema", name = "phone_code")
 public class PhoneCode {
@@ -25,14 +31,4 @@ public class PhoneCode {
 
     @Column(name = "dial_code", nullable = false, length = 10)
     private String dialCode;
-
-    public PhoneCode() {}
-
-    public Long getId() { return id; }
-    public Country getCountry() { return country; }
-    public String getDialCode() { return dialCode; }
-
-    public void setId(Long id) { this.id = id; }
-    public void setCountry(Country country) { this.country = country; }
-    public void setDialCode(String dialCode) { this.dialCode = dialCode; }
 }

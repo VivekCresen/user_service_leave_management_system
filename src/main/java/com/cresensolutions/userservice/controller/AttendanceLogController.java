@@ -3,22 +3,19 @@ package com.cresensolutions.userservice.controller;
 import com.cresensolutions.userservice.dto.AttendanceLogDto;
 import com.cresensolutions.userservice.service.AttendanceLogService;
 import com.cresensolutions.userservice.sse.SseEmitterService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+@RequiredArgsConstructor
 @RestController
 @RequestMapping("/api/users/attendance")
 public class AttendanceLogController {
 
     private final AttendanceLogService attendanceLogService;
     private final SseEmitterService sseEmitterService;
-
-    public AttendanceLogController(AttendanceLogService attendanceLogService, SseEmitterService sseEmitterService) {
-        this.attendanceLogService = attendanceLogService;
-        this.sseEmitterService = sseEmitterService;
-    }
 
     @PostMapping("/check-in")
     public ResponseEntity<AttendanceLogDto> checkIn(@RequestParam String username) {

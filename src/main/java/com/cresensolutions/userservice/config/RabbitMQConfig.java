@@ -1,39 +1,15 @@
 package com.cresensolutions.userservice.config;
 
 import org.springframework.amqp.core.*;
-import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
-import org.springframework.amqp.rabbit.connection.ConnectionFactory;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/**
- * Declares all exchanges, queues, and bindings for the User Service.
- *
- * Exchange layout:
- *   user.events  (topic)  — auth + user lifecycle events
- *   user.dlx     (direct) — dead-letter exchange for failed messages
- *
- * Routing keys:
- *   user.login              → q.user.login
- *   user.login.failed       → q.user.login.failed
- *   user.otp.requested      → q.user.otp.requested
- *   user.password.reset     → q.user.password.reset
- *   user.created            → q.user.created
- *   user.deleted            → q.user.deleted
- *   user.role.changed       → q.user.role.changed
- *   attendance.checkin      → q.attendance.checkin
- *   attendance.checkout     → q.attendance.checkout
- */
 @Configuration
 public class RabbitMQConfig {
 
-    // ── Exchange names ────────────────────────────────────────────────────────
     public static final String USER_EVENTS_EXCHANGE    = "user.events";
     public static final String USER_DLX                = "user.dlx";
 
-    // ── Routing keys ──────────────────────────────────────────────────────────
     public static final String RK_USER_LOGIN           = "user.login";
     public static final String RK_USER_LOGIN_FAILED    = "user.login.failed";
     public static final String RK_USER_OTP_REQUESTED   = "user.otp.requested";
@@ -44,7 +20,6 @@ public class RabbitMQConfig {
     public static final String RK_ATTENDANCE_CHECKIN   = "attendance.checkin";
     public static final String RK_ATTENDANCE_CHECKOUT  = "attendance.checkout";
 
-    // ── Queue names ───────────────────────────────────────────────────────────
     public static final String Q_USER_LOGIN            = "q.user.login";
     public static final String Q_USER_LOGIN_FAILED     = "q.user.login.failed";
     public static final String Q_USER_OTP_REQUESTED    = "q.user.otp.requested";
@@ -55,11 +30,9 @@ public class RabbitMQConfig {
     public static final String Q_ATTENDANCE_CHECKIN    = "q.attendance.checkin";
     public static final String Q_ATTENDANCE_CHECKOUT   = "q.attendance.checkout";
 
-    // ── Dead-letter queue names ───────────────────────────────────────────────
     public static final String Q_USER_CREATED_DLQ      = "q.user.created.dlq";
     public static final String Q_USER_OTP_DLQ          = "q.user.otp.requested.dlq";
 
-    // ── Exchanges ─────────────────────────────────────────────────────────────
 
     @Bean TopicExchange userEventsExchange() {
         return ExchangeBuilder.topicExchange(USER_EVENTS_EXCHANGE).durable(true).build();
@@ -69,7 +42,6 @@ public class RabbitMQConfig {
         return ExchangeBuilder.directExchange(USER_DLX).durable(true).build();
     }
 
-    // ── Dead-letter queues ────────────────────────────────────────────────────
 
     @Bean Queue userCreatedDlq() {
         return QueueBuilder.durable(Q_USER_CREATED_DLQ).build();
@@ -87,7 +59,6 @@ public class RabbitMQConfig {
         return BindingBuilder.bind(userOtpDlq()).to(userDlx()).with(Q_USER_OTP_REQUESTED);
     }
 
-    // ── Main queues ───────────────────────────────────────────────────────────
 
     @Bean Queue qUserLogin() { return durable(Q_USER_LOGIN); }
     @Bean Queue qUserLoginFailed() { return durable(Q_USER_LOGIN_FAILED); }
@@ -113,7 +84,6 @@ public class RabbitMQConfig {
     @Bean Queue qAttendanceCheckin() { return durable(Q_ATTENDANCE_CHECKIN); }
     @Bean Queue qAttendanceCheckout() { return durable(Q_ATTENDANCE_CHECKOUT); }
 
-    // ── Bindings ──────────────────────────────────────────────────────────────
 
     @Bean Binding bindUserLogin()         { return bind(qUserLogin(),         RK_USER_LOGIN); }
     @Bean Binding bindUserLoginFailed()   { return bind(qUserLoginFailed(),   RK_USER_LOGIN_FAILED); }
@@ -125,7 +95,6 @@ public class RabbitMQConfig {
     @Bean Binding bindAttendanceCheckin() { return bind(qAttendanceCheckin(), RK_ATTENDANCE_CHECKIN); }
     @Bean Binding bindAttendanceCheckout(){ return bind(qAttendanceCheckout(),RK_ATTENDANCE_CHECKOUT); }
 
-    // ── Cross-service queues (consumed by User Service from leave.events) ─────
 
     public static final String LEAVE_EVENTS_EXCHANGE     = "leave.events";
     public static final String RK_LEAVE_APPROVED         = "leave.approved";
@@ -150,30 +119,6 @@ public class RabbitMQConfig {
         return BindingBuilder.bind(qLeaveCancelledSse()).to(leaveEventsExchange()).with(RK_LEAVE_CANCELLED);
     }
 
-    // ── Serialization + template ──────────────────────────────────────────────
-
-    @Bean
-    public Jackson2JsonMessageConverter jsonMessageConverter() {
-        return new Jackson2JsonMessageConverter();
-    }
-
-    @Bean
-    public RabbitTemplate rabbitTemplate(ConnectionFactory cf) {
-        RabbitTemplate tpl = new RabbitTemplate(cf);
-        tpl.setMessageConverter(jsonMessageConverter());
-        return tpl;
-    }
-
-    @Bean
-    public SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(
-            ConnectionFactory cf) {
-        SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
-        factory.setConnectionFactory(cf);
-        factory.setMessageConverter(jsonMessageConverter());
-        return factory;
-    }
-
-    // ── helpers ───────────────────────────────────────────────────────────────
 
     private Queue durable(String name) {
         return QueueBuilder.durable(name).build();

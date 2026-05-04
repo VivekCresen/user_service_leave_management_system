@@ -8,9 +8,11 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import lombok.Getter;
 
 import java.time.Instant;
 
+@Getter
 @Entity
 @Table(schema = "email_schema", name = "email_template")
 public class EmailTemplate {
@@ -48,10 +50,4 @@ public class EmailTemplate {
 
     @PreUpdate
     void onUpdate() { updatedAt = Instant.now(); }
-
-    public Long getId() { return id; }
-    public String getTemplateType() { return templateType; }
-    public String getSubject() { return subject; }
-    public String getBodyHtml() { return bodyHtml; }
-    public boolean isActive() { return active; }
 }
