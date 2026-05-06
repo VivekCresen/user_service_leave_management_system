@@ -88,12 +88,20 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,circuitbreakers,ratelimiters
+        include: health,info,circuitbreakers,ratelimiters,prometheus,metrics
   health:
     circuitbreakers:
       enabled: true
     ratelimiters:
       enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+      slo:
+        http.server.requests: 50ms,100ms,200ms,500ms,1s
 
 # ── Resilience4j ──────────────────────────────────────────────────────────────
 resilience4j:

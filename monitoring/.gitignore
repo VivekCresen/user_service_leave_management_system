@@ -1,0 +1,12 @@
+# Environment files
+.env
+
+# Docker volumes (data is in named volumes, not local)
+data/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
