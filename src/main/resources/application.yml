@@ -1,0 +1,157 @@
+spring:
+  application:
+    name: user-service
+  liquibase:
+    enabled: false
+  config:
+    import: optional:configserver:http://localhost:8888
+  datasource:
+    url: jdbc:postgresql://localhost:5432/leave_management_system
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: false
+    open-in-view: false
+    properties:
+      hibernate:
+        default_schema: public
+        default_batch_fetch_size: 50
+        jdbc:
+          fetch_size: 50
+
+  flowable:
+    database-schema-update: true
+  sql:
+    init:
+      mode: always
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${MAIL_USERNAME:viveksinhchavda@gmail.com}
+    password: ${MAIL_PASSWORD:drauzuufuzlddfwy}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: /
+    listener:
+      simple:
+        acknowledge-mode: auto
+        retry:
+          enabled: true
+          initial-interval: 2000
+          max-attempts: 3
+          multiplier: 2.0
+
+server:
+  port: 8081
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+    initial-instance-info-replication-interval-seconds: 5
+    instance-info-replication-interval-seconds: 5
+    registry-fetch-interval-seconds: 10
+    eureka-server-connect-timeout-seconds: 10
+    eureka-server-read-timeout-seconds: 10
+  instance:
+    prefer-ip-address: true
+    lease-renewal-interval-in-seconds: 10
+    lease-expiration-duration-in-seconds: 30
+
+security:
+  jwt:
+    secret: ${JWT_SECRET:Q3Jlc2VuTGVhdmVNYW5hZ2VtZW50U3lzdGVtSldUU2VjcmV0S2V5Rm9ySFMyNTY=}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+  otp:
+    expiration-minutes: ${OTP_EXPIRATION_MINUTES:10}
+
+app:
+  mail:
+    from: ${APP_MAIL_FROM:${MAIL_USERNAME:viveksinhchavda@gmail.com}}
+    logo-path: ${APP_MAIL_LOGO_PATH:/home/vivek/Documents/CresenProject/front-end/frontend_leave_management_system/public/assets/logo-6.png}
+  frontend:
+    forgot-password-url: ${FRONTEND_FORGOT_PASSWORD_URL:http://localhost:4200/forgot-password}
+    login-url: ${FRONTEND_LOGIN_URL:http://localhost:4200/login}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,circuitbreakers,ratelimiters,prometheus,metrics
+  health:
+    circuitbreakers:
+      enabled: true
+    ratelimiters:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+      slo:
+        http.server.requests: 50ms,100ms,200ms,500ms,1s
+
+# ── Resilience4j ──────────────────────────────────────────────────────────────
+resilience4j:
+
+  ratelimiter:
+    instances:
+      # Login: max 10 attempts per 10 seconds per instance — brute-force protection
+      login-rl:
+        limit-for-period: 10
+        limit-refresh-period: 10s
+        timeout-duration: 0s
+        register-health-indicator: true
+      # OTP request: max 3 per minute — stops OTP spam / email bombing
+      otp-request-rl:
+        limit-for-period: 3
+        limit-refresh-period: 1m
+        timeout-duration: 0s
+        register-health-indicator: true
+      # OTP verify + password reset: max 5 per minute — stops OTP brute-force
+      otp-verify-rl:
+        limit-for-period: 5
+        limit-refresh-period: 1m
+        timeout-duration: 0s
+        register-health-indicator: true
+
+  circuitbreaker:
+    instances:
+      # SMTP: open after 3 failures in 5 calls — mail server can go down
+      smtp-cb:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 5
+        failure-rate-threshold: 60
+        slow-call-duration-threshold: 10s
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 2
+        automatic-transition-from-open-to-half-open-enabled: true
+        register-health-indicator: true
+
+  retry:
+    instances:
+      # SMTP: retry once after 2s on transient mail errors
+      smtp-retry:
+        max-attempts: 2
+        wait-duration: 2s
+        retry-exceptions:
+          - org.springframework.mail.MailException
+          - jakarta.mail.MessagingException
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
